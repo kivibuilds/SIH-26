@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+
+  --vx-bg: #0a0d11;
+  --vx-bg-raised: #10141a;
+  --vx-bg-panel: #151a21;
+  --vx-border: #2c3440;
+  --vx-border-strong: #3d4756;
+  --vx-text: #e7edf5;
+  --vx-text-muted: #8a94a3;
+  --vx-accent: #c9a227;
+  --vx-clear: #3d9b6e;
+  --vx-review: #c9a227;
+  --vx-high: #c44c3a;
+  --vx-processing: #5b8def;
+  --vx-font: "Segoe UI", system-ui, sans-serif;
+  --vx-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+@theme inline {
+  --color-console-bg: var(--vx-bg);
+  --color-console-raised: var(--vx-bg-raised);
+  --color-console-panel: var(--vx-bg-panel);
+  --color-console-border: var(--vx-border);
+  --color-console-border-strong: var(--vx-border-strong);
+  --color-console-text: var(--vx-text);
+  --color-console-muted: var(--vx-text-muted);
+  --color-console-accent: var(--vx-accent);
+  --color-status-clear: var(--vx-clear);
+  --color-status-review: var(--vx-review);
+  --color-status-high: var(--vx-high);
+  --color-status-processing: var(--vx-processing);
+  --font-sans: var(--vx-font);
+  --font-mono: var(--vx-mono);
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100svh;
+  margin: 0;
+}
+
+body {
+  font-family: var(--vx-font);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--vx-text);
+  background: var(--vx-bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom hairline scrollbar for security console feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0d11;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2c3440;
+  border-radius: 0px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d4756;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
