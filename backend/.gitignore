@@ -1,0 +1,43 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Python environments and generated files
+venv/
+venv_OLD/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime data
+screening.db
+*.sqlite
+*.sqlite3
+uploads/*
+!uploads/.gitkeep
+
+# OCR/model artifacts (store separately or use Git LFS)
+tessdata/*.traineddata
+
+# Blockchain build and deployment output
+blockchain/cache/
+blockchain/artifacts/
+blockchain/typechain-types/
+blockchain/ignition/deployments/
+blockchain/.openzeppelin/
+
+# Logs and temporary files
+*.log
+*.tmp
+temp_*
+debug_*
