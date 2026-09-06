@@ -25,8 +25,15 @@ export function DocumentPreview({
   const docNumber = screening?.documentNumber || 'X1234567'
   const travelerName = screening?.travelerName || 'Alex Rivera'
   const nationality = screening?.nationality || 'UTO (Utopia)'
-  const dob = screening?.extractedFields?.find((f) => f.key.includes('Birth'))?.value || '1991-08-14'
-  const expiry = screening?.extractedFields?.find((f) => f.key.includes('Expiry'))?.value || '2031-05-09'
+  const findFieldValue = (term, fallback) => {
+    const field = screening?.extractedFields?.find((item) => {
+      const fieldName = item.key || item.label || ''
+      return fieldName.toLowerCase().includes(term.toLowerCase())
+    })
+    return field?.value || fallback
+  }
+  const dob = findFieldValue('birth', '1991-08-14')
+  const expiry = findFieldValue('expiry', '2031-05-09')
   const isHighRisk = screening?.decision === 'high_risk'
   const isReview = screening?.decision === 'review'
 
