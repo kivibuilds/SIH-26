@@ -85,14 +85,7 @@ export function ScreeningResultPage() {
   const checks = result.checks || {}
   const isHighRisk = result.decision === 'high_risk' || result.overallScore >= 70
 
-  const highRiskCriticalFindings = isHighRisk
-    ? [
-        { title: 'Date of Birth Mismatch', detail: 'Visible document birth date does not match the machine-readable zone.' },
-        { title: 'MRZ Inconsistency', detail: 'Machine-readable zone check digit calculation failed.' },
-        { title: 'Possible Text Manipulation', detail: 'Tampering confidence: 87% in numeric date field typography.' },
-        { title: 'Face Mismatch', detail: 'Presented face similarity score (34.2%) is below threshold.' },
-      ]
-    : []
+  const highRiskCriticalFindings = isHighRisk ? result.findings || [] : []
 
   return (
     <div className="space-y-6">

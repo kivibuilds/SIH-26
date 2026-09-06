@@ -135,11 +135,20 @@ function normalizeScreening(data) {
   const riskScore = Number(data.risk?.score || 0)
   const decision = data.risk?.level?.toLowerCase() === 'low' ? 'clear' : riskScore >= 70 ? 'high_risk' : 'review'
   const extracted = data.extracted_data || {}
+  const documentValidationPassed = data.document_validation?.status === 'VALID'
+  const mrzPassed = data.mrz_verification?.status === 'VALID'
+  const facePassed = data.face_verification?.match === true
+  const findings = (data.risk?.reasons || []).map((reason, index) => ({
+    code: `RISK-${index + 1}`,
+    severity: riskScore >= 70 ? 'high' : 'medium',
+    title: reason,
+    detail: 'Backend risk assessment reported this condition during screening.',
+  }))
   const checks = {
-    docValidation: { passed: data.document_validation?.valid !== false, status: data.document_validation?.valid === false ? 'FAILED' : 'VALID' },
-    mrzVerification: { passed: data.mrz_verification?.valid !== false, status: data.mrz_verification?.valid === false ? 'FAILED' : 'VALID' },
+    docValidation: { passed: documentValidationPassed, status: documentValidationPassed ? 'VALID' : 'FAILED' },
+    mrzVerification: { passed: mrzPassed, status: mrzPassed ? 'VALID' : 'FAILED' },
     tamperingAnalysis: { passed: !data.tampering_analysis?.detected, status: data.tampering_analysis?.detected ? 'FAILED' : 'CLEARED' },
-    faceVerification: { passed: data.face_verification?.match !== false, status: data.face_verification?.match === false ? 'MISMATCH' : 'MATCH' },
+    faceVerification: { passed: facePassed, status: facePassed ? 'MATCH' : data.face_verification?.match === false ? 'MISMATCH' : 'REVIEW' },
     watchlistCheck: { passed: !data.watchlist?.match, status: data.watchlist?.match ? 'FLAGGED' : 'CLEAR' },
   }
 
@@ -155,14 +164,39 @@ function normalizeScreening(data) {
     summary: `Screening completed with ${data.risk?.level || 'UNKNOWN'} risk classification.`,
     recommendedAction: decision === 'clear' ? 'Clear for processing' : 'Review document and supporting evidence',
     checks,
-    extractedFields: Object.entries(extracted).map(([label, value]) => ({ label, value, source: 'OCR' })),
-    findings: [],
+    extractedFields: Object.entries(extracted).map(([key, value]) => ({
+      key,
+      value: value ?? 'Not detected',
+      source: key.includes('mrz') ? 'MRZ' : 'VIZ',
+      status: value ? 'valid' : 'review',
+    })),
+    findings,
     ocrAnalysis: {},
-    mrzVerification: data.mrz_verification,
-    documentValidation: data.document_validation,
-    forensics: data.tampering_analysis,
-    faceVerification: data.face_verification,
-    watchlist: data.watchlist,
+    mrzVerification: {
+      ...data.mrz_verification,
+      checkDigits: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'REVIEW',
+      ocrConsistency: mrzPassed ? 'VALID' : 'REVIEW',
+    },
+    documentValidation: {
+      ...data.document_validation,
+      requiredFieldsPresent: data.document_validation?.checks?.required_fields ? '100%' : '0%',
+      dateValidity: data.document_validation?.expiry_status || 'UNKNOWN',
+      crossFieldConsistency: data.document_validation?.checks?.consistency ? 'VALID' : 'REVIEW',
+    },
+    forensics: {
+      ...data.tampering_analysis,
+      tamperingConfidence: Number(data.tampering_analysis?.confidence || 0) * 100,
+      textManipulation: data.tampering_analysis?.detected ? 'DETECTED' : 'NOT DETECTED',
+    },
+    faceVerification: {
+      ...data.face_verification,
+      similarityScore: data.face_verification?.confidence == null ? null : Number(data.face_verification.confidence) * 100,
+      status: facePassed ? 'MATCH' : data.face_verification?.match === false ? 'MISMATCH' : 'REVIEW',
+    },
+    watchlist: {
+      ...data.watchlist,
+      status: data.watchlist?.match ? 'FLAGGED' : 'CLEAR',
+    },
     audit: data.blockchain,
     status: 'complete',
   }
