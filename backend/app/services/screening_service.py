@@ -70,8 +70,14 @@ def generate_screening_result(file_path: str, document_type: str = None) -> dict
     else:
         tampering_result = {"detected": False, "confidence": 0.0, "indicators": ["Tampering analysis unavailable (missing dependencies)"]}
 
-    # Face verification / watchlist - not implemented yet (placeholders)
-    face_verification = {"match": None, "confidence": None}
+    # Face verification requires a separate live/selfie image and a biometric
+    # comparison service; document-only screening cannot perform this check.
+    face_verification = {
+        "status": "NOT_PERFORMED",
+        "match": None,
+        "confidence": None,
+        "reason": "A live face image was not provided.",
+    }
     watchlist = {"match": False}
 
     # Simple risk scoring rules (prototype): start low, increase for failures

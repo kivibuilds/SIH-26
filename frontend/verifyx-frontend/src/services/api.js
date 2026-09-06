@@ -195,7 +195,7 @@ function normalizeScreening(data) {
     faceVerification: {
       ...data.face_verification,
       similarityScore: data.face_verification?.confidence == null ? null : Number(data.face_verification.confidence) * 100,
-      status: facePassed ? 'MATCH' : data.face_verification?.match === false ? 'MISMATCH' : 'REVIEW',
+      status: facePassed ? 'MATCH' : data.face_verification?.match === false ? 'MISMATCH' : 'NOT PERFORMED',
     },
     watchlist: {
       ...data.watchlist,

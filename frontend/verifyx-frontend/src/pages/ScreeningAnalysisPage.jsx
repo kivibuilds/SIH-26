@@ -234,22 +234,25 @@ export function ScreeningAnalysisPage() {
           <div className="space-y-3 text-xs font-mono">
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Document Photo Detected:</span>
-              <span className="text-emerald-400 font-bold">YES</span>
+              <span className="text-console-muted font-bold">NOT CHECKED</span>
             </div>
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Presented Face Detected:</span>
-              <span className="text-emerald-400 font-bold">YES</span>
+              <span className="text-console-muted font-bold">NOT PROVIDED</span>
             </div>
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Face Similarity:</span>
-              <span className={`font-bold text-sm ${Number(face.similarityScore) >= 85 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {face.similarityScore || 95.2}%
+              <span className="text-console-muted font-bold text-sm">
+                {face.similarityScore == null ? 'NOT AVAILABLE' : `${face.similarityScore}%`}
               </span>
             </div>
             <div className="flex justify-between items-center pb-1">
               <span className="text-console-muted font-sans text-xs">Verification Status:</span>
-              <StatusChip status={face.status || 'MATCH'} size="xs" />
+              <StatusChip status={face.status || 'NOT PERFORMED'} size="xs" />
             </div>
+            {face.reason && (
+              <p className="pt-1 text-[11px] text-console-muted font-sans">{face.reason}</p>
+            )}
           </div>
         </Panel>
 
