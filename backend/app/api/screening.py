@@ -186,7 +186,9 @@ def get_screening(
         "screening_id": screening.screening_id,
 
         "document": {
+            "document_id": document.document_id if document else None,
             "type": document.document_type if document else None,
+            "filename": document.filename if document else None,
             "status": "ANALYZED"
         },
 

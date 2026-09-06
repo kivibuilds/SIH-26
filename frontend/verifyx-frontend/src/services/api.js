@@ -154,6 +154,10 @@ function normalizeScreening(data) {
 
   return {
     id: data.screening_id,
+    documentId: data.document?.document_id,
+    documentUrl: data.document?.document_id
+      ? `${baseURL}/documents/${data.document.document_id}/file`
+      : null,
     documentType: data.document?.type,
     travelerName: extracted.full_name || extracted.name,
     documentNumber: extracted.passport_number || extracted.visa_number,

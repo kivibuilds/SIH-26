@@ -22,6 +22,7 @@ export function DocumentPreview({
   }, [file])
 
   const docType = screening?.documentType || 'Passport'
+  const documentUrl = objectUrl || screening?.documentUrl
   const docNumber = screening?.documentNumber || 'X1234567'
   const travelerName = screening?.travelerName || 'Alex Rivera'
   const nationality = screening?.nationality || 'UTO (Utopia)'
@@ -89,10 +90,10 @@ export function DocumentPreview({
 
       {/* Document Canvas Container */}
       <div className="relative flex-1 min-h-[300px] p-4 flex items-center justify-center bg-black/50 overflow-hidden select-none">
-        {objectUrl ? (
+        {documentUrl ? (
           <div className="relative max-h-[420px] max-w-full">
             <img
-              src={objectUrl}
+              src={documentUrl}
               alt="Uploaded document scan"
               className="max-h-[400px] w-auto border border-console-border object-contain shadow-lg"
             />
