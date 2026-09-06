@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   CheckCircle2,
 } from 'lucide-react'
-import { createScreening, uploadDocument } from '../services/api'
+import { analyzeDocument, createScreening, uploadDocument, useMock } from '../services/api'
 import { ROUTES } from '../constants/routes'
 import { DOCUMENT_TYPES } from '../constants/screeningStatus'
 import PageHeader from '../components/layout/PageHeader'
@@ -69,18 +69,21 @@ export function NewScreeningPage() {
     try {
       setIsSubmitting(true)
 
-      // 1. Create screening record
-      const screening = await createScreening({
-        travelerRef: travelerRef || `TRV-${Math.floor(10000 + Math.random() * 90000)}`,
-        travelerName: travelerName || 'Synthetic Subject',
-        documentType,
-      })
+      if (useMock) {
+        const screening = await createScreening({
+          travelerRef: travelerRef || `TRV-${Math.floor(10000 + Math.random() * 90000)}`,
+          travelerName: travelerName || 'Synthetic Subject',
+          documentType,
+        })
+        await uploadDocument(screening.id, file)
+        navigate(ROUTES.SCREENING_STATUS(screening.id))
+        return
+      }
 
-      // 2. Upload file payload
-      await uploadDocument(screening.id, file)
-
-      // 3. Navigate to status pipeline
-      navigate(ROUTES.SCREENING_STATUS(screening.id))
+      const backendDocumentType = documentType === 'National ID' ? 'AADHAAR' : documentType.toUpperCase()
+      const uploaded = await uploadDocument(backendDocumentType, file)
+      const result = await analyzeDocument(uploaded.document_id)
+      navigate(ROUTES.SCREENING_RESULT(result.screening_id))
     } catch (err) {
       console.error('Failed to initiate screening:', err)
       setSubmitError(err.message || 'Failed to initiate screening pipeline.')
