@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
-from app.database.models import Screening
+from app.database.models import Document, Screening
 
 
 router = APIRouter(
@@ -21,12 +21,28 @@ def get_all_screenings(
         .all()
     )
 
+    documents = {
+        document.document_id: document
+        for document in db.query(Document).all()
+    }
+
     return [
         {
+            "document_type": documents.get(screening.document_id).document_type
+            if documents.get(screening.document_id) else None,
+            "filename": documents.get(screening.document_id).filename
+            if documents.get(screening.document_id) else None,
+            "id": screening.screening_id,
             "screening_id": screening.screening_id,
             "document_id": screening.document_id,
             "risk_score": screening.risk_score,
             "risk_level": screening.risk_level,
+            "decision": (
+                "clear" if screening.risk_level == "LOW"
+                else "high_risk" if screening.risk_level == "HIGH"
+                else "review"
+            ),
+            "overallScore": screening.risk_score,
             "face_match": screening.face_match,
             "tampering_detected": screening.tampering_detected,
             "watchlist_match": screening.watchlist_match,

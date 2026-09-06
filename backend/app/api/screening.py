@@ -117,6 +117,8 @@ def analyze_document(
         "screening_id": screening_id,
 
         "document": {
+            "document_id": document.document_id,
+            "filename": document.filename,
             "type": document.document_type,
             "status": "ANALYZED"
         },
@@ -182,6 +184,17 @@ def get_screening(
         .first()
     )
 
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    result = generate_screening_result(document.file_path, document.document_type)
+    screening.risk_score = result["risk"]["score"]
+    screening.risk_level = result["risk"]["level"]
+    screening.face_match = result["face_verification"]["match"]
+    screening.tampering_detected = result["tampering_analysis"]["detected"]
+    screening.watchlist_match = result["watchlist"]["match"]
+    db.commit()
+
     return {
         "screening_id": screening.screening_id,
 
@@ -192,47 +205,15 @@ def get_screening(
             "status": "ANALYZED"
         },
 
-        "extracted_data": {
-            "name": extracted.name if extracted else None,
-            "passport_number": (
-                extracted.passport_number
-                if extracted else None
-            ),
-            "nationality": (
-                extracted.nationality
-                if extracted else None
-            ),
-            "date_of_birth": (
-                extracted.date_of_birth
-                if extracted else None
-            ),
-            "gender": (
-                extracted.gender
-                if extracted else None
-            ),
-            "expiry_date": (
-                extracted.expiry_date
-                if extracted else None
-            )
-        },
-
-        "risk": {
-            "score": screening.risk_score,
-            "level": screening.risk_level
-        },
-
-        "face_verification": {
-            "match": screening.face_match
-        },
-
-        "tampering_analysis": {
-            "detected": screening.tampering_detected
-        },
-
-        "watchlist": {
-            "match": screening.watchlist_match
-        },
-
+        "extracted_data": result["extracted_data"],
+        "ocr_analysis": result["ocr_analysis"],
+        "mrz_verification": result["mrz_verification"],
+        "document_validation": result["document_validation"],
+        "tampering_analysis": result["tampering_analysis"],
+        "face_verification": result["face_verification"],
+        "watchlist": result["watchlist"],
+        "risk": result["risk"],
+        "blockchain": {"recorded": False, "hash": None},
         "created_at": screening.created_at
     }
 

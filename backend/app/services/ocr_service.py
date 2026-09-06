@@ -477,6 +477,31 @@ def extract_layout_data(file_path: str | Path) -> list[dict]:
     return results
 
 
+def calculate_ocr_metrics(file_path: str | Path, review_threshold: float = 70.0) -> dict:
+    """Calculate document-level OCR metrics from Tesseract word confidence."""
+    words = extract_layout_data(file_path)
+    scored_words = [
+        word for word in words
+        if isinstance(word.get("confidence"), (int, float))
+        and word["confidence"] >= 0
+    ]
+    review_words = [
+        word for word in scored_words
+        if word["confidence"] < review_threshold
+    ]
+
+    return {
+        "confidence": round(
+            sum(word["confidence"] for word in scored_words) / len(scored_words),
+            1,
+        ) if scored_words else None,
+        "fields_detected": len(scored_words),
+        "fields_requiring_review": len(review_words),
+        "review_threshold": review_threshold,
+        "words": scored_words,
+    }
+
+
 # ============================================================================
 # MRZ CHECK DIGIT UTILITIES
 # ============================================================================

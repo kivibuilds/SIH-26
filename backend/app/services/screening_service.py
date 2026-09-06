@@ -54,6 +54,18 @@ def generate_screening_result(file_path: str, document_type: str = None) -> dict
     except Exception:
         pass
 
+    try:
+        from app.services.ocr_service import calculate_ocr_metrics
+        ocr_analysis = calculate_ocr_metrics(file_path)
+    except Exception as error:
+        ocr_analysis = {
+            "confidence": None,
+            "fields_detected": 0,
+            "fields_requiring_review": 0,
+            "review_threshold": 70.0,
+            "error": str(error),
+        }
+
     # Document validation
     try:
         document_validation = validate_document(parsed or {})
@@ -100,6 +112,7 @@ def generate_screening_result(file_path: str, document_type: str = None) -> dict
 
     return {
         "extracted_data": parsed,
+        "ocr_analysis": ocr_analysis,
         "mrz_verification": mrz_verification,
         "document_validation": document_validation,
         "tampering_analysis": tampering_result,

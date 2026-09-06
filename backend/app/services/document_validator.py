@@ -24,7 +24,6 @@ REQUIRED_FIELDS = [
 # visa OCR frequently misses one of those without the document being
 # unusable.
 REQUIRED_FIELDS_VISA = [
-    "visa_number",
     "holder_name",
     "passport_number",
     "nationality",
@@ -284,12 +283,15 @@ def _validate_visa_document(identity: dict) -> dict:
             "Missing required field(s): " + ", ".join(missing_fields)
         )
 
-    # ---- 2. Visa number ----
+    # ---- 2. Visa identifier ----
+    # US visas commonly expose a control number rather than a field
+    # literally labelled "visa number".
 
     visa_number = identity.get("visa_number")
-    visa_number_ok = bool(visa_number)
+    visa_identifier = visa_number or identity.get("control_number")
+    visa_number_ok = bool(visa_identifier)
     if not visa_number_ok:
-        errors.append("Visa number is empty.")
+        errors.append("Visa number or control number is empty.")
 
     # ---- 3. Holder name ----
 
