@@ -292,18 +292,18 @@ export function ScreeningAnalysisPage() {
             </div>
             <div className="border border-console-border/80 bg-console-raised p-3 space-y-1">
               <span className="text-[10px] uppercase text-console-muted">Synthetic Reference</span>
-              <p className="font-bold text-console-text truncate">{audit.txRef || '0x7a91a92bf01e7428c42e'}</p>
+              <p className="font-bold text-console-text truncate">{audit.txRef || 'Unavailable'}</p>
             </div>
             <div className="border border-console-border/80 bg-console-raised p-3 space-y-1">
               <span className="text-[10px] uppercase text-console-muted">Sequence ID</span>
-              <p className="font-bold text-console-accent">#{audit.blockNumber || '4892014'}</p>
+              <p className="font-bold text-console-accent">{audit.blockNumber ?? 'Unavailable'}</p>
             </div>
           </div>
 
           <div className="border border-console-border/80 bg-black/50 p-3">
             <p className="text-[10px] uppercase text-console-muted mb-1">Document Digest (SHA-256):</p>
             <p className="text-slate-300 break-all text-[11px]">
-              {audit.hash || 'sha256:4f8a2b1c90e5436d7a8e2f9104b2a6c8e3d5a1f79b0c2e4d6a8b1c3e5f7a9b0c'}
+              {audit.documentHash || audit.hash || 'Unavailable'}
             </p>
           </div>
 

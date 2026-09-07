@@ -42,3 +42,8 @@ blockchain/.openzeppelin/
 *.tmp
 temp_*
 debug_*
+
+# External evaluation datasets and generated reports
+/data/*
+!/data/README.md
+/dataset_results/

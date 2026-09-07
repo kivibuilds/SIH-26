@@ -48,6 +48,19 @@ CONTRACT_ABI = [
         "type": "function"
     },
     {
+        "inputs": [{"internalType": "string", "name": "documentId", "type": "string"}],
+        "name": "getDocumentStatus",
+        "outputs": [
+            {"internalType": "string", "name": "", "type": "string"},
+            {"internalType": "uint256", "name": "", "type": "uint256"},
+            {"internalType": "address", "name": "", "type": "address"},
+            {"internalType": "uint8", "name": "", "type": "uint8"},
+            {"internalType": "bool", "name": "", "type": "bool"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {"internalType": "string", "name": "documentId", "type": "string"},
             {"internalType": "string", "name": "documentHash", "type": "string"}
@@ -205,6 +218,20 @@ def get_document(screening_id: str):
         "document_hash": result[0],
         "timestamp": result[1],
         "verified_by": result[2]
+    }
+
+
+def get_document_status(screening_id: str):
+    if not w3 or not w3.is_connected():
+        raise Exception("Blockchain client is unavailable")
+
+    result = contract.functions.getDocumentStatus(screening_id).call()
+    return {
+        "document_hash": result[0],
+        "timestamp": result[1],
+        "owner": result[2],
+        "status": result[3],
+        "exists": result[4],
     }
 
 

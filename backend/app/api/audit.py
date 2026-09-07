@@ -9,6 +9,8 @@ from app.database.models import Document, Screening, AuditLog, AuditEvent, Verif
 from app.blockchain.blockchain_service import (
     blockchain_status,
     get_document,
+    get_document_status,
+    record_document,
     revoke_document,
     verify_document,
 )
@@ -18,6 +20,23 @@ router = APIRouter(
     prefix="/api/audit",
     tags=["Audit"]
 )
+
+
+def _integrity_result(uploaded_hash, stored_hash, chain_hash, blockchain_confirmed):
+    matches_stored = uploaded_hash == stored_hash
+    matches_chain = blockchain_confirmed and chain_hash is not None and uploaded_hash == chain_hash
+    if not blockchain_confirmed or chain_hash is None:
+        failure_reason = "Blockchain record is unavailable, so the document cannot be verified against the registered hash."
+    elif not matches_chain:
+        failure_reason = "Document hash does not match the blockchain-registered hash. The uploaded file may have been modified."
+    else:
+        failure_reason = None
+    return {
+        "integrity": "VERIFIED" if matches_stored and matches_chain else "FAILED",
+        "verified": matches_stored and matches_chain,
+        "blockchain_match": matches_chain,
+        "failure_reason": failure_reason,
+    }
 
 
 # =========================================================
@@ -151,7 +170,7 @@ def verify_record_integrity(
     local_match = recalculated_hash == record.record_hash
     chain_record = None
     blockchain_match = None
-    is_recorded = cast(str, record.blockchain_status) == "RECORDED"
+    is_recorded = cast(str, record.blockchain_status) == "CONFIRMED"
 
     try:
         if is_recorded and bool(blockchain_status()["connected"]):
@@ -162,7 +181,8 @@ def verify_record_integrity(
 
     return {
         "screening_id": screening_id,
-        "integrity_valid": local_match and (blockchain_match is not False),
+        "integrity": "VERIFIED" if local_match and blockchain_match is True else "FAILED",
+        "integrity_valid": local_match and blockchain_match is True,
         "local_hash": record.record_hash,
         "recalculated_hash": recalculated_hash,
         "document_hash": record.document_hash,
@@ -171,6 +191,7 @@ def verify_record_integrity(
         "block_number": record.block_number,
         "blockchain_match": blockchain_match,
         "blockchain_record": chain_record,
+        "blockchain_error": record.blockchain_error,
     }
 
 
@@ -199,7 +220,7 @@ def verify_uploaded_document(
 
     chain_hash = None
     verification_transaction = None
-    is_recorded = cast(str, record.blockchain_status) == "RECORDED"
+    is_recorded = cast(str, record.blockchain_status) == "CONFIRMED"
     try:
         if is_recorded and bool(blockchain_status()["connected"]):
             chain_hash = get_document(screening_id)["document_hash"]
@@ -208,7 +229,14 @@ def verify_uploaded_document(
 
     expected_hash = chain_hash or record.document_hash
     verified = uploaded_hash == expected_hash
-    if verified and is_recorded:
+    blockchain_result = _integrity_result(
+        uploaded_hash,
+        record.document_hash,
+        chain_hash,
+        is_recorded,
+    )
+    blockchain_verified = blockchain_result["verified"]
+    if blockchain_verified:
         try:
             verification_transaction = verify_document(screening_id, uploaded_hash)
             record.blockchain_verify_tx = verification_transaction["transaction_hash"]
@@ -229,14 +257,71 @@ def verify_uploaded_document(
     db.commit()
     return {
         "screening_id": screening_id,
-        "status": "VERIFIED" if verified else "TAMPERED",
-        "verified": verified,
+        "integrity": blockchain_result["integrity"],
+        "status": "VERIFIED" if blockchain_verified else "TAMPERED",
+        "verified": blockchain_verified,
         "uploaded_hash": uploaded_hash,
         "expected_hash": expected_hash,
-        "blockchain_match": chain_hash is None or uploaded_hash == chain_hash,
+        "blockchain_match": blockchain_result["blockchain_match"],
+        "registered_hash": expected_hash,
+        "match_status": "MATCH" if blockchain_verified else "MISMATCH",
+        "failure_reason": blockchain_result["failure_reason"],
         "blockchain_status": record.blockchain_status,
         "transaction_hash": record.blockchain_tx,
         "verification_transaction_hash": record.blockchain_verify_tx,
+        "block_number": record.block_number,
+        "blockchain_error": record.blockchain_error,
+    }
+
+
+@router.post("/{screening_id}/retry")
+def retry_blockchain_registration(
+    screening_id: str,
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(VerificationRecord)
+        .filter(VerificationRecord.screening_id == screening_id)
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Verification record not found")
+    if record.blockchain_status == "CONFIRMED":
+        return {
+            "screening_id": screening_id,
+            "status": record.blockchain_status,
+            "transaction_hash": record.blockchain_tx,
+            "block_number": record.block_number,
+        }
+
+    try:
+        transaction = record_document(record.document_hash, screening_id)
+        if transaction["status"] != 1:
+            record.blockchain_status = "FAILED"
+            record.blockchain_error = "Blockchain transaction receipt reported failure."
+        else:
+            record.blockchain_status = "CONFIRMED"
+            record.blockchain_error = None
+            record.blockchain_tx = transaction["transaction_hash"]
+            record.block_number = transaction["block_number"]
+    except Exception as error:
+        record.blockchain_status = "PENDING"
+        record.blockchain_error = str(error)[:1000]
+
+    db.add(AuditEvent(
+        screening_id=screening_id,
+        event_type="DOCUMENT_REGISTERED_RETRY",
+        status=record.blockchain_status,
+        transaction_hash=record.blockchain_tx,
+        details=record.blockchain_error or "Blockchain registration retry completed.",
+    ))
+    db.commit()
+    return {
+        "screening_id": screening_id,
+        "status": record.blockchain_status,
+        "transaction_hash": record.blockchain_tx,
+        "block_number": record.block_number,
+        "error": record.blockchain_error,
     }
 
 
@@ -255,6 +340,7 @@ def revoke_record(
 
     transaction = revoke_document(screening_id)
     setattr(record, "blockchain_status", "REVOKED")
+    setattr(record, "blockchain_error", None)
     setattr(record, "blockchain_revoke_tx", transaction["transaction_hash"])
     db.add(AuditEvent(
         screening_id=screening_id,

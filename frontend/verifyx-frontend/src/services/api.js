@@ -143,6 +143,25 @@ export async function analyzeDocument(documentId) {
   }
 }
 
+export async function verifyUploadedDocument(screeningId, file) {
+  if (useMock) {
+    return {
+      screening_id: screeningId,
+      integrity: 'VERIFIED',
+      verified: true,
+      blockchain_status: 'MOCK_CONFIRMED',
+      transaction_hash: null,
+      verification_transaction_hash: null,
+    }
+  }
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await api.post(`/audit/${screeningId}/verify-upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data
+}
+
 function normalizeScreening(data) {
   const riskScore = Number(data.risk?.score || 0)
   const decision = data.risk?.level?.toLowerCase() === 'low' ? 'clear' : riskScore >= 70 ? 'high_risk' : 'review'
@@ -223,9 +242,12 @@ function normalizeScreening(data) {
     },
     audit: {
       ...data.blockchain,
+      verificationId: data.screening_id,
       txRef: data.blockchain?.transaction_hash,
       status: data.blockchain?.status,
       blockNumber: data.blockchain?.block_number,
+      documentHash: data.blockchain?.document_hash,
+      error: data.blockchain?.error,
     },
     status: 'complete',
   }
@@ -243,5 +265,6 @@ export default {
   listScreenings,
   getAnalytics,
   updateScreeningStatus,
+  verifyUploadedDocument,
   useMock,
 }

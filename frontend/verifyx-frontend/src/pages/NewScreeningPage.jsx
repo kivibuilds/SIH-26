@@ -240,7 +240,6 @@ export function NewScreeningPage() {
             documentFile={file}
             selfieFile={selfieFile}
             travelerName={travelerName || 'Synthetic Subject'}
-            similarity={selfieFile ? 96.4 : 74.6}
             onSelfieSelect={handleSelfieSelect}
             onUseSample={handleUseSampleFace}
           />

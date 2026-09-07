@@ -1,0 +1,20 @@
+# External datasets and generated evaluation output
+data/*
+!data/README.md
+
+# Local runtime files
+screening.db
+*.sqlite
+*.sqlite3
+uploads/*
+!uploads/.gitkeep
+
+# Python and Node generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+dist/
+.env
+.env.*
+!.env.example

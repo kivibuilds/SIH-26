@@ -48,15 +48,27 @@ def _file_hash(file_path):
     return digest.hexdigest()
 
 
+def _apply_blockchain_result(record, blockchain):
+    if blockchain["status"] != 1:
+        record.blockchain_status = "FAILED"
+        record.blockchain_error = "Blockchain transaction receipt reported failure."
+        return
+    record.blockchain_status = "CONFIRMED"
+    record.blockchain_error = None
+    record.blockchain_tx = blockchain["transaction_hash"]
+    record.block_number = blockchain["block_number"]
+
+
 def _blockchain_response(record):
     return {
-        "recorded": record.blockchain_status == "RECORDED",
+        "recorded": record.blockchain_status == "CONFIRMED",
         "status": record.blockchain_status,
         "hash": record.document_hash,
         "document_hash": record.document_hash,
         "result_hash": record.record_hash,
         "transaction_hash": record.blockchain_tx,
         "block_number": record.block_number,
+        "error": record.blockchain_error,
     }
 
 
@@ -168,9 +180,15 @@ def analyze_document(
     result_hash = _record_hash(payload)
     verification = VerificationRecord(
         screening_id=screening_id,
+        document_type=document.document_type,
         result_payload=json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str),
         document_hash=document_hash,
         record_hash=result_hash,
+        risk_score=risk["score"],
+        risk_level=risk["level"],
+        mrz_status=(result.get("mrz_verification") or {}).get("status"),
+        tampering_detected=tampering["detected"],
+        tampering_confidence=tampering.get("confidence"),
         blockchain_status="PENDING",
     )
     db.add(verification)
@@ -179,11 +197,10 @@ def analyze_document(
 
     try:
         blockchain = record_document(document_hash, screening_id)
-        verification.blockchain_status = "RECORDED" if blockchain["status"] == 1 else "FAILED"
-        verification.blockchain_tx = blockchain["transaction_hash"]
-        verification.block_number = blockchain["block_number"]
-    except Exception:
+        _apply_blockchain_result(verification, blockchain)
+    except Exception as error:
         verification.blockchain_status = "PENDING"
+        verification.blockchain_error = str(error)[:1000]
     db.commit()
     db.refresh(verification)
 
@@ -192,7 +209,7 @@ def analyze_document(
         event_type="DOCUMENT_REGISTERED",
         status=verification.blockchain_status,
         transaction_hash=verification.blockchain_tx,
-        details="Document hash registered during screening.",
+        details=verification.blockchain_error or "Document hash registered during screening.",
     ))
     db.commit()
 
