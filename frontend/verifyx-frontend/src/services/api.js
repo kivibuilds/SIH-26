@@ -201,7 +201,12 @@ function normalizeScreening(data) {
       ...data.watchlist,
       status: data.watchlist?.match ? 'FLAGGED' : 'CLEAR',
     },
-    audit: data.blockchain,
+    audit: {
+      ...data.blockchain,
+      txRef: data.blockchain?.transaction_hash,
+      status: data.blockchain?.status,
+      blockNumber: data.blockchain?.block_number,
+    },
     status: 'complete',
   }
 }

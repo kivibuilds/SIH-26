@@ -11,7 +11,6 @@ import {
   Clock,
   CheckCircle2,
   Activity,
-  PlayCircle,
   Loader2,
 } from 'lucide-react'
 import { getDashboard } from '../services/api'

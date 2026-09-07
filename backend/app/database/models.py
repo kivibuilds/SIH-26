@@ -77,3 +77,35 @@ class AuditLog(Base):
     blockchain_tx = Column(String)
 
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    screening_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    transaction_hash = Column(String)
+    details = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+# -----------------------------------
+# VERIFICATION RECORD
+# -----------------------------------
+
+class VerificationRecord(Base):
+    __tablename__ = "verification_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    screening_id = Column(String, unique=True, nullable=False, index=True)
+    result_payload = Column(Text, nullable=False)
+    document_hash = Column(String, nullable=False, index=True)
+    record_hash = Column(String, nullable=False, index=True)
+    blockchain_status = Column(String, nullable=False, default="PENDING")
+    blockchain_tx = Column(String)
+    blockchain_verify_tx = Column(String)
+    blockchain_revoke_tx = Column(String)
+    block_number = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)

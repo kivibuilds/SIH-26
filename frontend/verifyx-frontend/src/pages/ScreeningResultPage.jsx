@@ -7,11 +7,6 @@ import {
   ArrowRight,
   RefreshCw,
   Printer,
-  FileCheck,
-  UserCheck,
-  Layers,
-  Database,
-  Search,
 } from 'lucide-react'
 import { getScreeningResult } from '../services/api'
 import { ROUTES } from '../constants/routes'
@@ -290,17 +285,17 @@ export function ScreeningResultPage() {
           <div className="border border-console-border bg-console-panel p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono text-xs">
             <div>
               <p className="text-[10px] uppercase font-semibold text-console-muted tracking-wider">
-                Prototype Audit Record
+                Verification Audit Record
               </p>
               <p className="text-console-text font-bold mt-0.5">
-                Ref: {result.audit?.txRef || '0x7a91...c42e'}
+                TX: {result.audit?.txRef || 'Pending blockchain confirmation'}
               </p>
               <p className="text-[10px] text-console-muted">
-                Timestamp: {result.audit?.timestamp || '02 Sep 2026, 01:42 UTC'}
+                SHA-256: {result.audit?.hash || 'Pending'}
               </p>
             </div>
             <div className="border border-console-border/80 bg-console-raised px-2.5 py-1 text-[10px] text-console-accent font-semibold uppercase">
-              STATUS: RECORDED (DEMO AUDIT)
+              STATUS: {result.audit?.status || 'PENDING'}
             </div>
           </div>
         </div>

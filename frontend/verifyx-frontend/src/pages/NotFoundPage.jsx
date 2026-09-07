@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, ArrowLeft, Terminal } from 'lucide-react'
+import { AlertCircle, ArrowLeft } from 'lucide-react'
 import { ROUTES } from '../constants/routes'
 import Button from '../components/ui/Button'
 

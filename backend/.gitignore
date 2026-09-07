@@ -30,6 +30,7 @@ uploads/*
 tessdata/*.traineddata
 
 # Blockchain build and deployment output
+blockchain/node_modules/
 blockchain/cache/
 blockchain/artifacts/
 blockchain/typechain-types/

@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database.database import Base, engine
+from app.database.database import initialize_database
 from app.database import models
 from app.api.documents import router as documents_router
 from app.api.screening import router as screening_router
 from app.api.history import router as history_router
 from app.api.audit import router as audit_router
 
-Base.metadata.create_all(bind=engine)
+initialize_database()
 
 
 app = FastAPI(
