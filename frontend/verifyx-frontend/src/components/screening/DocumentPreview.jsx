@@ -8,8 +8,8 @@ export function DocumentPreview({
   showControls = true,
   className = '',
 }) {
-  const [activeLayer, setActiveLayer] = useState('raw') // 'raw' | 'ocr' | 'forensics'
   const [objectUrl, setObjectUrl] = useState(null)
+  const activeLayer = 'raw'
 
   useEffect(() => {
     if (file && file instanceof File && file.type.startsWith('image/')) {
@@ -50,41 +50,6 @@ export function DocumentPreview({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 font-mono text-[10px]">
-            <button
-              type="button"
-              onClick={() => setActiveLayer('raw')}
-              className={`px-2 py-1 border transition-colors cursor-pointer ${
-                activeLayer === 'raw'
-                  ? 'border-console-accent bg-console-accent/20 text-console-accent font-semibold'
-                  : 'border-console-border text-console-muted hover:text-console-text'
-              }`}
-            >
-              RAW SCAN
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLayer('ocr')}
-              className={`px-2 py-1 border transition-colors cursor-pointer ${
-                activeLayer === 'ocr'
-                  ? 'border-blue-500 bg-blue-950/60 text-blue-300 font-semibold'
-                  : 'border-console-border text-console-muted hover:text-console-text'
-              }`}
-            >
-              OCR ZONES
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLayer('forensics')}
-              className={`px-2 py-1 border transition-colors cursor-pointer ${
-                activeLayer === 'forensics'
-                  ? 'border-amber-500 bg-amber-950/60 text-amber-300 font-semibold'
-                  : 'border-console-border text-console-muted hover:text-console-text'
-              }`}
-            >
-              FORENSIC ELA
-            </button>
-          </div>
         </div>
       )}
 

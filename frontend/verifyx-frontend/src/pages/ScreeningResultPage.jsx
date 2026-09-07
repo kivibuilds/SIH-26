@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ShieldAlert,
   CheckCircle2,
@@ -26,12 +26,15 @@ import DocumentPreview from '../components/screening/DocumentPreview'
 export function ScreeningResultPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const [result, setResult] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [result, setResult] = useState(location.state?.screeningResult || null)
+  const [loading, setLoading] = useState(!location.state?.screeningResult)
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    if (location.state?.screeningResult) return undefined
+
     let mounted = true
 
     const fetchResult = async () => {
@@ -55,7 +58,7 @@ export function ScreeningResultPage() {
     return () => {
       mounted = false
     }
-  }, [id])
+  }, [id, location.state])
 
   if (loading) {
     return (

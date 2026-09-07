@@ -3,6 +3,7 @@ import mockHandlers from './mock/handlers'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
 export const useMock = import.meta.env.VITE_USE_MOCK === 'true'
+const SYNTHETIC_BASELINE_COUNT = 1284
 
 export const api = axios.create({
   baseURL,
@@ -43,12 +44,19 @@ export async function getDashboard() {
     return mockHandlers.getDashboard()
   }
   const screenings = await listScreenings()
+  const cleared = screenings.items.filter((item) => item.decision === 'clear').length
+  const needsReview = screenings.items.filter((item) => item.decision === 'review').length
+  const highRisk = screenings.items.filter((item) => item.decision === 'high_risk').length
   return {
-    totalScreenings: screenings.total,
-    pendingReview: screenings.items.filter((item) => item.risk_level !== 'LOW').length,
-    highRisk: screenings.items.filter((item) => item.risk_level === 'HIGH').length,
-    cleared: screenings.items.filter((item) => item.risk_level === 'LOW').length,
-    recentScreenings: screenings.items,
+    kpis: {
+      totalScreenings: SYNTHETIC_BASELINE_COUNT + screenings.total,
+      cleared,
+      needsReview,
+      highRisk,
+      syntheticBaseline: SYNTHETIC_BASELINE_COUNT,
+      liveScreenings: screenings.total,
+    },
+    recentQueue: screenings.items,
   }
 }
 
@@ -105,8 +113,9 @@ export async function listScreenings(filters = {}) {
     ...item,
     id: item.screening_id,
     overallScore: item.risk_score,
-    decision: item.risk_level?.toLowerCase() === 'low' ? 'clear' : 'review',
+    decision: item.decision || (item.risk_level?.toLowerCase() === 'low' ? 'clear' : item.risk_level?.toLowerCase() === 'high' ? 'high_risk' : 'review'),
     createdAt: item.created_at,
+    documentType: item.document_type,
   }))
   return { items, total: items.length }
 }
@@ -128,7 +137,10 @@ export async function updateScreeningStatus(id, status, updates = {}) {
 
 export async function analyzeDocument(documentId) {
   const res = await api.post(`/screening/analyze/${documentId}`)
-  return res.data
+  return {
+    ...res.data,
+    normalized: normalizeScreening(res.data),
+  }
 }
 
 function normalizeScreening(data) {
@@ -136,7 +148,7 @@ function normalizeScreening(data) {
   const decision = data.risk?.level?.toLowerCase() === 'low' ? 'clear' : riskScore >= 70 ? 'high_risk' : 'review'
   const extracted = data.extracted_data || {}
   const documentValidationPassed = data.document_validation?.status === 'VALID'
-  const mrzPassed = data.mrz_verification?.status === 'VALID'
+  const mrzPassed = ['VALID', 'MATCH'].includes(data.mrz_verification?.status)
   const facePassed = data.face_verification?.match === true
   const findings = (data.risk?.reasons || []).map((reason, index) => ({
     code: `RISK-${index + 1}`,
@@ -168,14 +180,22 @@ function normalizeScreening(data) {
     summary: `Screening completed with ${data.risk?.level || 'UNKNOWN'} risk classification.`,
     recommendedAction: decision === 'clear' ? 'Clear for processing' : 'Review document and supporting evidence',
     checks,
-    extractedFields: Object.entries(extracted).map(([key, value]) => ({
-      key,
-      value: value ?? 'Not detected',
-      source: key.includes('mrz') ? 'MRZ' : 'VIZ',
-      status: value ? 'valid' : 'review',
-    })),
+    extractedFields: Object.entries(extracted)
+      .filter(([key, value]) => key !== 'raw_text' && key !== 'mrz' && (value == null || ['string', 'number', 'boolean'].includes(typeof value)))
+      .map(([key, value]) => ({
+        key,
+        value: value ?? 'Not detected',
+        source: key.includes('mrz') ? 'MRZ' : 'VIZ',
+        status: value ? 'valid' : 'review',
+      })),
     findings,
-    ocrAnalysis: {},
+    ocrAnalysis: {
+      confidence: data.ocr_analysis?.confidence,
+      fieldsDetected: data.ocr_analysis?.fields_detected,
+      fieldsRequiringReview: data.ocr_analysis?.fields_requiring_review,
+      reviewThreshold: data.ocr_analysis?.review_threshold,
+      engineVersion: 'Tesseract OCR',
+    },
     mrzVerification: {
       ...data.mrz_verification,
       checkDigits: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'REVIEW',

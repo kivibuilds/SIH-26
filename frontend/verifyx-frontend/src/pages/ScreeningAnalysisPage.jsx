@@ -120,22 +120,22 @@ export function ScreeningAnalysisPage() {
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">OCR Confidence:</span>
               <span className={`font-bold ${Number(ocr.confidence) >= 90 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {ocr.confidence || 98.5}%
+                {ocr.confidence == null ? 'NOT AVAILABLE' : `${ocr.confidence}%`}
               </span>
             </div>
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Fields Detected:</span>
-              <span className="text-console-text font-bold">{ocr.fieldsDetected || 14}</span>
+              <span className="text-console-text font-bold">{ocr.fieldsDetected ?? analysis.extractedFields?.length ?? 0}</span>
             </div>
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Fields Requiring Review:</span>
               <span className={ocr.fieldsRequiringReview > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
-                {ocr.fieldsRequiringReview ?? 0}
+                {ocr.fieldsRequiringReview ?? analysis.extractedFields?.filter((field) => field.status === 'review').length ?? 0}
               </span>
             </div>
             <div className="flex justify-between pb-1">
               <span className="text-console-muted font-sans text-xs">OCR Engine Model:</span>
-              <span className="text-console-muted">{ocr.engineVersion || 'v4.1-neural-ocr (demo)'}</span>
+                <span className="text-console-muted">{ocr.engineVersion || 'Tesseract OCR'}</span>
             </div>
           </div>
         </Panel>
@@ -190,7 +190,7 @@ export function ScreeningAnalysisPage() {
             </div>
             <div className="flex justify-between pb-1">
               <span className="text-console-muted font-sans text-xs">Template Match Score:</span>
-              <span className="text-console-text font-bold">{docVal.templateMatchScore || '98.5%'}</span>
+              <span className="text-console-text font-bold">{docVal.templateMatchScore || 'NOT AVAILABLE'}</span>
             </div>
           </div>
         </Panel>
@@ -204,7 +204,7 @@ export function ScreeningAnalysisPage() {
             <div className="flex justify-between border-b border-console-border/60 pb-2">
               <span className="text-console-muted font-sans text-xs">Tampering Confidence:</span>
               <span className={`font-bold ${Number(forensics.tamperingConfidence) > 50 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {forensics.tamperingConfidence ?? 2}%
+                {forensics.tamperingConfidence == null ? 'NOT AVAILABLE' : `${Number(forensics.tamperingConfidence).toFixed(1)}%`}
               </span>
             </div>
             <div className="flex justify-between border-b border-console-border/60 pb-2">
@@ -221,7 +221,7 @@ export function ScreeningAnalysisPage() {
             </div>
             <div className="flex justify-between pb-1">
               <span className="text-console-muted font-sans text-xs">Noise Residual Check:</span>
-              <span className="text-console-text">{forensics.elaResult || 'NORMAL'}</span>
+              <span className="text-console-text">{forensics.elaResult || 'NOT AVAILABLE'}</span>
             </div>
           </div>
         </Panel>

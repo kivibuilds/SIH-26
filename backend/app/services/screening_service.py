@@ -1,4 +1,28 @@
+from copy import deepcopy
+from pathlib import Path
+
+
+_SCREENING_CACHE = {}
+
+
 def generate_screening_result(file_path: str, document_type: str = None) -> dict:
+    """Return a cached analysis unless the uploaded file has changed."""
+    path = Path(file_path)
+    cache_key = (
+        str(path.resolve()),
+        (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None,
+        (document_type or "").upper(),
+    )
+
+    if cache_key in _SCREENING_CACHE:
+        return deepcopy(_SCREENING_CACHE[cache_key])
+
+    result = _generate_screening_result(file_path, document_type)
+    _SCREENING_CACHE[cache_key] = deepcopy(result)
+    return result
+
+
+def _generate_screening_result(file_path: str, document_type: str = None) -> dict:
     """
     Generate a screening result for a saved document file.
 

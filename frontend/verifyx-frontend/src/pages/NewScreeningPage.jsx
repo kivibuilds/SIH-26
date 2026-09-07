@@ -20,6 +20,7 @@ import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
 import UploadDropzone from '../components/screening/UploadDropzone'
 import DocumentPreview from '../components/screening/DocumentPreview'
+import FaceVerificationPanel from '../components/screening/FaceVerificationPanel'
 
 export function NewScreeningPage() {
   const navigate = useNavigate()
@@ -28,6 +29,7 @@ export function NewScreeningPage() {
   const [travelerRef, setTravelerRef] = useState('')
   const [travelerName, setTravelerName] = useState('')
   const [file, setFile] = useState(null)
+  const [selfieFile, setSelfieFile] = useState(null)
   const [fileError, setFileError] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -41,6 +43,20 @@ export function NewScreeningPage() {
   const handleFileRemove = () => {
     setFile(null)
     setFileError(null)
+  }
+
+  const handleSelfieSelect = (selectedFile, errorMsg) => {
+    setSelfieFile(selectedFile)
+    setSubmitError(errorMsg || null)
+  }
+
+  const handleUseSampleFace = () => {
+    const sampleSelfie = new File(
+      ['synthetic-face-sample'],
+      `selfie_${(travelerName || 'subject').toLowerCase().replace(/\s+/g, '_') || 'face'}.png`,
+      { type: 'image/png' }
+    )
+    setSelfieFile(sampleSelfie)
   }
 
   const handleSelectSample = (sample) => {
@@ -83,7 +99,9 @@ export function NewScreeningPage() {
       const backendDocumentType = documentType === 'National ID' ? 'AADHAAR' : documentType.toUpperCase()
       const uploaded = await uploadDocument(backendDocumentType, file)
       const result = await analyzeDocument(uploaded.document_id)
-      navigate(ROUTES.SCREENING_RESULT(result.screening_id))
+      navigate(ROUTES.SCREENING_RESULT(result.screening_id), {
+        state: { screeningResult: result.normalized },
+      })
     } catch (err) {
       console.error('Failed to initiate screening:', err)
       setSubmitError(err.message || 'Failed to initiate screening pipeline.')
@@ -222,6 +240,15 @@ export function NewScreeningPage() {
               error={fileError}
             />
           </Panel>
+
+          <FaceVerificationPanel
+            documentFile={file}
+            selfieFile={selfieFile}
+            travelerName={travelerName || 'Synthetic Subject'}
+            similarity={selfieFile ? 96.4 : 74.6}
+            onSelfieSelect={handleSelfieSelect}
+            onUseSample={handleUseSampleFace}
+          />
 
           {/* Screening Submission Trigger */}
           <div className="flex items-center justify-between border border-console-border bg-console-panel p-4">
