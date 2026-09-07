@@ -8,6 +8,13 @@ import {
   Layers,
   ArrowRight,
   RefreshCw,
+<<<<<<< HEAD
+=======
+  Clock,
+  CheckCircle2,
+  Activity,
+  Loader2,
+>>>>>>> 4ba9fbcef2c5259ae29f22cea42d7742ac66da69
 } from 'lucide-react'
 import { getDashboard } from '../services/api'
 import { ROUTES } from '../constants/routes'

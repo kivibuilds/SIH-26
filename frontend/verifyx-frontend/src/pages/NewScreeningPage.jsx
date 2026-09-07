@@ -1,16 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  FilePlus,
   Play,
-  ArrowLeft,
-  FileText,
   User,
   Hash,
-  Sparkles,
   Info,
   ShieldCheck,
-  CheckCircle2,
 } from 'lucide-react'
 import { analyzeDocument, createScreening, uploadDocument, useMock } from '../services/api'
 import { ROUTES } from '../constants/routes'

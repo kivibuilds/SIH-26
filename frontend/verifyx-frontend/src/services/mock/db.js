@@ -803,7 +803,7 @@ export const db = {
     }
   },
 
-  getAnalyticsData(range = '7d') {
+  getAnalyticsData() {
     return {
       overview: {
         total: 1284,

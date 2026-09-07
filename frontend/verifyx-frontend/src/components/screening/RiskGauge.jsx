@@ -1,5 +1,4 @@
-import { ShieldAlert, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
-import { getRiskLevel } from '../../utils/format'
+import { ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 export function RiskGauge({
   score = 0,
@@ -9,7 +8,6 @@ export function RiskGauge({
   criticalFindings = [],
   className = '',
 }) {
-  const risk = getRiskLevel(score)
   const isHighRisk = score >= 70 || decision === 'high_risk'
   const isReview = (score >= 30 && score < 70) || decision === 'review'
 

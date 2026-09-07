@@ -1,6 +1,5 @@
 import { delay } from './delay'
 import { db, MOCK_OFFICER } from './db'
-import { SCREENING_STATUS } from '../../constants/screeningStatus'
 
 export const mockHandlers = {
   async login({ officerId, password }) {

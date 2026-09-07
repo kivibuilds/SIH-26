@@ -1,14 +1,19 @@
+import uuid
+import hashlib
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-import uuid
 
 from app.database.database import get_db
 from app.database.models import (
     Document,
     ExtractedData,
     Screening,
+    AuditEvent,
+    VerificationRecord,
 )
-
+from app.blockchain.blockchain_service import record_document
 from app.services.screening_service import generate_screening_result
 
 
@@ -16,6 +21,58 @@ router = APIRouter(
     prefix="/api/screening",
     tags=["Screening"]
 )
+
+
+def _record_payload(screening_id, document, result):
+    return {
+        "screening_id": screening_id,
+        "document": {
+            "document_id": document.document_id,
+            "filename": document.filename,
+            "type": document.document_type,
+        },
+        **result,
+    }
+
+
+def _record_hash(payload):
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _file_hash(file_path):
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as file:
+        while chunk := file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _blockchain_response(record):
+    return {
+        "recorded": record.blockchain_status == "RECORDED",
+        "status": record.blockchain_status,
+        "hash": record.document_hash,
+        "document_hash": record.document_hash,
+        "result_hash": record.record_hash,
+        "transaction_hash": record.blockchain_tx,
+        "block_number": record.block_number,
+    }
+
+
+def _response(screening, document, payload, record):
+    return {
+        "screening_id": screening.screening_id,
+        "document": {
+            "document_id": document.document_id,
+            "filename": document.filename,
+            "type": document.document_type,
+            "status": "ANALYZED",
+        },
+        **{key: value for key, value in payload.items() if key not in {"screening_id", "document"}},
+        "blockchain": _blockchain_response(record),
+        "created_at": screening.created_at,
+    }
 
 
 # =========================================================
@@ -106,42 +163,40 @@ def analyze_document(
 
     db.add(screening)
 
-    # Save to database
+    payload = _record_payload(screening_id, document, result)
+    document_hash = _file_hash(document.file_path)
+    result_hash = _record_hash(payload)
+    verification = VerificationRecord(
+        screening_id=screening_id,
+        result_payload=json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str),
+        document_hash=document_hash,
+        record_hash=result_hash,
+        blockchain_status="PENDING",
+    )
+    db.add(verification)
+    db.commit()
+    db.refresh(verification)
+
+    try:
+        blockchain = record_document(document_hash, screening_id)
+        verification.blockchain_status = "RECORDED" if blockchain["status"] == 1 else "FAILED"
+        verification.blockchain_tx = blockchain["transaction_hash"]
+        verification.block_number = blockchain["block_number"]
+    except Exception:
+        verification.blockchain_status = "PENDING"
+    db.commit()
+    db.refresh(verification)
+
+    db.add(AuditEvent(
+        screening_id=screening_id,
+        event_type="DOCUMENT_REGISTERED",
+        status=verification.blockchain_status,
+        transaction_hash=verification.blockchain_tx,
+        details="Document hash registered during screening.",
+    ))
     db.commit()
 
-    # -----------------------------------------------------
-    # Return screening result
-    # -----------------------------------------------------
-
-    return {
-        "screening_id": screening_id,
-
-        "document": {
-            "document_id": document.document_id,
-            "filename": document.filename,
-            "type": document.document_type,
-            "status": "ANALYZED"
-        },
-
-        "extracted_data": result["extracted_data"],
-
-        "mrz_verification": result["mrz_verification"],
-
-        "document_validation": result["document_validation"],
-
-        "tampering_analysis": result["tampering_analysis"],
-
-        "face_verification": result["face_verification"],
-
-        "watchlist": result["watchlist"],
-
-        "risk": result["risk"],
-
-        "blockchain": {
-            "recorded": False,
-            "hash": None
-        }
-    }
+    return _response(screening, document, payload, verification)
 
 
 # =========================================================
@@ -187,34 +242,15 @@ def get_screening(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    result = generate_screening_result(document.file_path, document.document_type)
-    screening.risk_score = result["risk"]["score"]
-    screening.risk_level = result["risk"]["level"]
-    screening.face_match = result["face_verification"]["match"]
-    screening.tampering_detected = result["tampering_analysis"]["detected"]
-    screening.watchlist_match = result["watchlist"]["match"]
-    db.commit()
+    verification = (
+        db.query(VerificationRecord)
+        .filter(VerificationRecord.screening_id == screening_id)
+        .first()
+    )
+    if not verification:
+        raise HTTPException(status_code=404, detail="Verification record not found")
 
-    return {
-        "screening_id": screening.screening_id,
-
-        "document": {
-            "document_id": document.document_id if document else None,
-            "type": document.document_type if document else None,
-            "filename": document.filename if document else None,
-            "status": "ANALYZED"
-        },
-
-        "extracted_data": result["extracted_data"],
-        "ocr_analysis": result["ocr_analysis"],
-        "mrz_verification": result["mrz_verification"],
-        "document_validation": result["document_validation"],
-        "tampering_analysis": result["tampering_analysis"],
-        "face_verification": result["face_verification"],
-        "watchlist": result["watchlist"],
-        "risk": result["risk"],
-        "blockchain": {"recorded": False, "hash": None},
-        "created_at": screening.created_at
-    }
+    payload = json.loads(verification.result_payload)
+    return _response(screening, document, payload, verification)
 
 

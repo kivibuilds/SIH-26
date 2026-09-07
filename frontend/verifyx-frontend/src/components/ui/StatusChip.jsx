@@ -1,6 +1,6 @@
-import { CheckCircle2, AlertTriangle, ShieldAlert, Loader2, Clock, XCircle, Info } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, ShieldAlert, Loader2, Clock, Info } from 'lucide-react'
 
-export function StatusChip({ status, type = 'status', className = '', showIcon = true, size = 'sm' }) {
+export function StatusChip({ status, className = '', showIcon = true, size = 'sm' }) {
   if (!status) return null
 
   const s = String(status).toLowerCase()
