@@ -1,7 +1,11 @@
 import axios from 'axios'
 import mockHandlers from './mock/handlers'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+const baseURL = import.meta.env.VITE_API_BASE_URL || (
+  window.location.protocol === 'https:'
+    ? `${window.location.origin}/api`
+    : `http://${window.location.hostname}:8000/api`
+)
 export const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 const SYNTHETIC_BASELINE_COUNT = 1284
 
@@ -135,6 +139,7 @@ export async function updateScreeningStatus(id, status, updates = {}) {
   return { id, status, ...updates }
 }
 
+<<<<<<< HEAD
 export async function analyzeDocument(documentId) {
   const res = await api.post(`/screening/analyze/${documentId}`)
   return {
@@ -157,6 +162,12 @@ export async function verifyUploadedDocument(screeningId, file) {
   const formData = new FormData()
   formData.append('file', file)
   const res = await api.post(`/audit/${screeningId}/verify-upload`, formData, {
+=======
+export async function analyzeDocument(documentId, faceFile = null) {
+  const formData = new FormData()
+  if (faceFile) formData.append('face_file', faceFile)
+  const res = await api.post(`/screening/analyze/${documentId}`, formData, {
+>>>>>>> origin/main
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return res.data

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from copy import deepcopy
 from pathlib import Path
 
@@ -23,6 +24,9 @@ def generate_screening_result(file_path: str, document_type: str = None) -> dict
 
 
 def _generate_screening_result(file_path: str, document_type: str = None) -> dict:
+=======
+def generate_screening_result(file_path: str, document_type: str = None, face_file_path: str = None) -> dict:
+>>>>>>> origin/main
     """
     Generate a screening result for a saved document file.
 
@@ -74,7 +78,7 @@ def _generate_screening_result(file_path: str, document_type: str = None) -> dic
                     ok = validate_mrv_line2(line2)
                 else:
                     ok = validate_mrz_line2(line2)
-                mrz_verification = {"status": "MATCH" if ok else "MISMATCH", "confidence": 1.0 if ok else 0.0}
+                mrz_verification = {"status": "VALID" if ok else "INVALID", "confidence": 1.0 if ok else 0.0}
     except Exception:
         pass
 
@@ -106,31 +110,44 @@ def _generate_screening_result(file_path: str, document_type: str = None) -> dic
     else:
         tampering_result = {"detected": False, "confidence": 0.0, "indicators": ["Tampering analysis unavailable (missing dependencies)"]}
 
-    # Face verification requires a separate live/selfie image and a biometric
-    # comparison service; document-only screening cannot perform this check.
-    face_verification = {
-        "status": "NOT_PERFORMED",
-        "match": None,
-        "confidence": None,
-        "reason": "A live face image was not provided.",
-    }
+    if face_file_path:
+        try:
+            from app.services.face_verification import verify_face
+            face_verification = verify_face(file_path, face_file_path)
+        except Exception as error:
+            face_verification = {
+                "status": "NOT_PERFORMED",
+                "match": None,
+                "confidence": None,
+                "reason": f"Face verification is unavailable: {error}",
+            }
+    else:
+        face_verification = {
+            "status": "NOT_PERFORMED",
+            "match": None,
+            "confidence": None,
+            "reason": "A live face image was not provided.",
+        }
     watchlist = {"match": False}
 
     # Simple risk scoring rules (prototype): start low, increase for failures
     risk_score = 10
     reasons = []
 
+    if parse_errors:
+        risk_score = max(risk_score, 25)
+        reasons.append("Document could not be parsed; manual review required")
     if document_validation.get("status") == "INVALID":
-        risk_score = 90
+        risk_score = max(risk_score, 90)
         reasons.append("Document validation failed")
-    elif tampering_result.get("detected"):
-        risk_score = max(risk_score, 75)
+    if face_verification.get("match") is False:
+        risk_score = max(risk_score, 85)
+        reasons.append("Face verification did not match the document portrait")
+    if tampering_result.get("detected"):
+        risk_score = max(risk_score, 90)
         reasons.append("Tampering indicators present")
-    else:
-        # Slightly increase risk for parse errors
-        if parse_errors:
-            risk_score = 25
-            reasons.extend(parse_errors)
+    if face_verification.get("status") == "NOT_PERFORMED":
+        reasons.append("Face verification was not performed")
 
     risk_level = "HIGH" if risk_score >= 75 else "MEDIUM" if risk_score >= 25 else "LOW"
 

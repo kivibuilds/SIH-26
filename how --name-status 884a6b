@@ -1,0 +1,28 @@
+[33mcommit 884a6b7405bbf9a7ca27cbe142386935dff1185b[m
+Author: Vidula <kshirsagarvidula24@gmail.com>
+Date:   Tue Sep 8 02:39:49 2026 +0530
+
+    implemented hashing
+
+ .gitignore                                         |  20 [32m+[m
+ backend/.env.example                               |   2 [32m+[m[31m-[m
+ backend/.gitignore                                 |   5 [32m+[m
+ backend/app/api/audit.py                           | 100 [32m+++[m[31m-[m
+ backend/app/api/screening.py                       |  29 [32m+[m[31m-[m
+ backend/app/blockchain/blockchain_service.py       |  27 [32m+[m
+ backend/app/database/database.py                   |   8 [32m+[m
+ backend/app/database/models.py                     |  10 [32m+[m[31m-[m
+ backend/blockchain/package-lock.json               | 573 [32m+++[m[31m------------------[m
+ backend/requirements.txt                           |   1 [32m+[m
+ backend/scripts/run_dataset_evaluation.py          | 219 [32m++++++++[m
+ backend/tests/test_blockchain_audit.py             | 139 [32m+++++[m
+ data/README.md                                     |  55 [32m++[m
+ frontend/verifyx-frontend/.gitignore               |   3 [32m+[m
+ .../components/screening/FaceVerificationPanel.jsx |  14 [32m+[m[31m-[m
+ .../verifyx-frontend/src/pages/AnalyticsPage.jsx   | 416 [32m+++++[m[31m----------[m
+ .../verifyx-frontend/src/pages/DashboardPage.jsx   |   7 [31m-[m
+ .../src/pages/NewScreeningPage.jsx                 |   1 [31m-[m
+ .../src/pages/ScreeningAnalysisPage.jsx            |   6 [32m+[m[31m-[m
+ .../src/pages/ScreeningResultPage.jsx              |  54 [32m+[m[31m-[m
+ frontend/verifyx-frontend/src/services/api.js      |  23 [32m+[m
+ 21 files changed, 887 insertions(+), 825 deletions(-)
