@@ -2,8 +2,10 @@ import uuid
 import hashlib
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
+from pathlib import Path
+import shutil
 
 from app.database.database import get_db
 from app.database.models import (
@@ -82,6 +84,7 @@ def _response(screening, document, payload, record):
 @router.post("/analyze/{document_id}")
 def analyze_document(
     document_id: str,
+    face_file: UploadFile | None = File(default=None),
     db: Session = Depends(get_db)
 ):
     # Find uploaded document
@@ -104,7 +107,19 @@ def analyze_document(
     # Get screening result from service
     # -----------------------------------------------------
 
-    result = generate_screening_result(document.file_path, document.document_type)
+    face_path = None
+    if face_file is not None:
+        if face_file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            raise HTTPException(status_code=400, detail="Face capture must be a JPG, PNG, or WEBP image.")
+        face_path = Path("uploads") / f"FACE-{uuid.uuid4().hex[:8].upper()}{Path(face_file.filename or '').suffix.lower() or '.jpg'}"
+        with face_path.open("wb") as buffer:
+            shutil.copyfileobj(face_file.file, buffer)
+
+    try:
+        result = generate_screening_result(document.file_path, document.document_type, face_path)
+    finally:
+        if face_path is not None:
+            face_path.unlink(missing_ok=True)
 
     # -----------------------------------------------------
     # Store extracted data

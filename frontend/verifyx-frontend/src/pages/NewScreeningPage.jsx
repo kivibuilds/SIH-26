@@ -15,6 +15,7 @@ import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
 import UploadDropzone from '../components/screening/UploadDropzone'
 import DocumentPreview from '../components/screening/DocumentPreview'
+import FaceCapture from '../components/screening/FaceCapture'
 
 export function NewScreeningPage() {
   const navigate = useNavigate()
@@ -23,6 +24,7 @@ export function NewScreeningPage() {
   const [travelerRef, setTravelerRef] = useState('')
   const [travelerName, setTravelerName] = useState('')
   const [file, setFile] = useState(null)
+  const [faceFile, setFaceFile] = useState(null)
   const [fileError, setFileError] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -61,6 +63,11 @@ export function NewScreeningPage() {
       return
     }
 
+    if (!faceFile) {
+      setSubmitError('Please start the live camera and capture your face before starting screening.')
+      return
+    }
+
     try {
       setIsSubmitting(true)
 
@@ -77,7 +84,7 @@ export function NewScreeningPage() {
 
       const backendDocumentType = documentType === 'National ID' ? 'AADHAAR' : documentType.toUpperCase()
       const uploaded = await uploadDocument(backendDocumentType, file)
-      const result = await analyzeDocument(uploaded.document_id)
+      const result = await analyzeDocument(uploaded.document_id, faceFile)
       navigate(ROUTES.SCREENING_RESULT(result.screening_id))
     } catch (err) {
       console.error('Failed to initiate screening:', err)
@@ -218,6 +225,13 @@ export function NewScreeningPage() {
             />
           </Panel>
 
+          <Panel
+            title="Step 3 • Phone Face Capture"
+            subtitle="Use the phone camera for a live selfie"
+          >
+            <FaceCapture file={faceFile} onCapture={setFaceFile} onClear={() => setFaceFile(null)} />
+          </Panel>
+
           {/* Screening Submission Trigger */}
           <div className="flex items-center justify-between border border-console-border bg-console-panel p-4">
             <div className="flex items-center gap-2 text-xs text-console-muted">
@@ -232,7 +246,7 @@ export function NewScreeningPage() {
               loading={isSubmitting}
               icon={Play}
               onClick={handleStartScreening}
-              disabled={!file}
+              disabled={!file || !faceFile}
               className="text-xs tracking-wider"
             >
               Start Screening Pipeline
