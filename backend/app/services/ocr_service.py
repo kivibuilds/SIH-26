@@ -24,6 +24,7 @@ Design rules:
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -31,7 +32,16 @@ from typing import Optional
 try:
     import pytesseract
 except ImportError:  # pragma: no cover - test environments may omit Tesseract
-    pytesseract = None
+    # The app is sometimes launched with a system Python while its project
+    # dependencies live in backend/.venv.  Use that local environment as a
+    # fallback so OCR does not silently degrade to zero extracted fields.
+    _project_site_packages = Path(__file__).resolve().parents[2] / ".venv" / "Lib" / "site-packages"
+    if _project_site_packages.is_dir():
+        sys.path.insert(0, str(_project_site_packages))
+    try:
+        import pytesseract
+    except ImportError:
+        pytesseract = None
 try:
     from PIL import Image, ImageOps, ImageFilter
 except ImportError:  # pragma: no cover - test environments may omit Pillow
@@ -357,6 +367,46 @@ def extract_text_from_image(file_path: str | Path) -> str:
     ).strip()
 
 
+def extract_passport_identity_text(file_path: str | Path) -> str:
+    """OCR the central identity block of a passport biodata page."""
+    pages = _load_document_pages(file_path)
+    page_outputs: list[str] = []
+
+    for page_image in pages:
+        width, height = page_image.size
+        identity_crop = page_image.crop((
+            int(width * 0.18),
+            int(height * 0.12),
+            int(width * 0.78),
+            int(height * 0.72),
+        ))
+        best_text = ""
+        best_score = (-1, -1)
+
+        for scale in TEXT_UPSCALE_FACTORS:
+            for threshold in TEXT_THRESHOLDS:
+                candidate = _preprocess_text_image(
+                    identity_crop,
+                    scale=scale,
+                    threshold=threshold,
+                )
+                for psm in (6, 11):
+                    text = _ocr_to_text(candidate, config=f"--psm {psm}").strip()
+                    upper_text = text.upper()
+                    label_score = sum(
+                        1 for label in ("SURNAME", "GIVEN", "NAME") if label in upper_text
+                    )
+                    score = (label_score, sum(char.isalnum() for char in upper_text))
+                    if score > best_score:
+                        best_score = score
+                        best_text = text
+
+        if best_text:
+            page_outputs.append(best_text)
+
+    return "\n\n".join(page_outputs).strip()
+
+
 def extract_text_from_pdf(file_path: str | Path) -> str:
     """Compatibility wrapper for PDF callers."""
     return extract_text(file_path)
@@ -478,7 +528,11 @@ def extract_layout_data(file_path: str | Path) -> list[dict]:
 
 
 def calculate_ocr_metrics(file_path: str | Path, review_threshold: float = 70.0) -> dict:
-    """Calculate document-level OCR metrics from Tesseract word confidence."""
+    """Calculate OCR token metrics from Tesseract word confidence.
+
+    These counts describe OCR tokens, not successfully parsed document fields.
+    Structured-field counts are calculated by the document parsers/pipeline.
+    """
     words = extract_layout_data(file_path)
     scored_words = [
         word for word in words
@@ -495,6 +549,10 @@ def calculate_ocr_metrics(file_path: str | Path, review_threshold: float = 70.0)
             sum(word["confidence"] for word in scored_words) / len(scored_words),
             1,
         ) if scored_words else None,
+        "tokens_detected": len(scored_words),
+        "tokens_requiring_review": len(review_words),
+        # Keep the old keys for API compatibility, but make their meaning
+        # explicit until all clients have migrated to the token names.
         "fields_detected": len(scored_words),
         "fields_requiring_review": len(review_words),
         "review_threshold": review_threshold,
@@ -1027,6 +1085,19 @@ def _collect_mrz_rows(
             data, source_scale=MRZ_UPSCALE_FACTOR, y_offset=crop_top,
             source=f"crop-psm6-{threshold}",
         ))
+
+    # If the locator missed the exact bottom rows, make one additional,
+    # bounded lower-page pass. It still requires two spatially coherent rows
+    # and valid check digits before any identity data is returned.
+    extra_top = int(image.height * 0.65)
+    if extra_top > crop_top and extra_top < image.height - 20:
+        extra_crop = image.crop((0, extra_top, image.width, image.height))
+        prepared = _preprocess_text_image(extra_crop, scale=MRZ_UPSCALE_FACTOR, threshold=None)
+        data = _ocr_to_data(prepared, config=f"--psm 6 {MRZ_WHITELIST_CONFIG}")
+        rows.extend(_rows_from_ocr_data(
+            data, source_scale=MRZ_UPSCALE_FACTOR, y_offset=extra_top,
+            source="bottom-crop-psm6",
+        ))
     return rows
 
 
@@ -1321,46 +1392,6 @@ def extract_mrz_from_image(file_path: str | Path) -> list[str]:
 
     return []
 
-    best_pair: Optional[tuple[str, str]] = None
-    best_score = -1.0
-
-    for page in pages:
-        candidates = _collect_mrz_lines(
-            image=page,
-            document_code_prefix="P<",
-            crop_top_ratio=0.55,
-        )
-
-        pairs = _candidate_pairs(candidates, prefix="P<")
-
-        for line1, line2 in pairs:
-            normalized_line1 = normalize_mrz_line1(line1)
-            corrected_line2 = correct_mrz_line2(line2)
-
-            if (
-                len(normalized_line1) != 44
-                or len(corrected_line2) != 44
-            ):
-                continue
-
-            # A 44-character shape alone is not reliable enough to expose as
-            # a passport MRZ. All TD3 check digits must agree after at most
-            # the explicitly allowed one-character corrections above.
-            if not validate_mrz_line2(corrected_line2):
-                continue
-
-            score = _mrz_score(normalized_line1, "P<")
-            score += 200
-
-            if score > best_score:
-                best_score = score
-                best_pair = (
-                    normalized_line1,
-                    corrected_line2,
-                )
-
-    return list(best_pair) if best_pair else []
-
 
 # ============================================================================
 # PUBLIC VISA MRZ EXTRACTION
@@ -1381,45 +1412,6 @@ def extract_mrz_from_visa_image(file_path: str | Path) -> list[str]:
         if pair:
             return list(pair)
     return []
-
-    best_pair: Optional[tuple[str, str]] = None
-    best_score = -1.0
-
-    for page in pages:
-        candidates = _collect_mrz_lines(
-            image=page,
-            document_code_prefix="V<",
-            crop_top_ratio=0.70,
-        )
-
-        pairs = _candidate_pairs(candidates, prefix="V<")
-
-        for line1, line2 in pairs:
-            normalized_line1 = normalize_mrz_line1(line1)
-            corrected_line2 = correct_mrv_line2(line2)
-
-            if (
-                len(normalized_line1) != 44
-                or len(corrected_line2) != 44
-            ):
-                continue
-
-            # US visa MRV-A documents have three field-level check digits.
-            # Do not return a merely plausible pair when they do not verify.
-            if not validate_mrv_line2(corrected_line2):
-                continue
-
-            score = _mrz_score(normalized_line1, "V<")
-            score += 200
-
-            if score > best_score:
-                best_score = score
-                best_pair = (
-                    normalized_line1,
-                    corrected_line2,
-                )
-
-    return list(best_pair) if best_pair else []
 
 
 # ============================================================================

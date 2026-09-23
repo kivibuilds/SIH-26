@@ -44,14 +44,156 @@ def parse_passport(file_path: str) -> dict:
     """
     from app.services.ocr_service import extract_mrz_from_image
 
-    mrz_lines = extract_mrz_from_image(file_path)
-    if not isinstance(mrz_lines, list) or len(mrz_lines) != 2:
-        raise ValueError(
-            "Passport OCR did not return exactly two TD3 MRZ lines; "
-            f"received {mrz_lines!r}."
-        )
+    try:
+        mrz_lines = extract_mrz_from_image(file_path)
+    except Exception as error:
+        return _parse_visible_passport_fallback(file_path, "UNREADABLE", str(error))
 
-    return parse_passport_mrz(mrz_lines)
+    if isinstance(mrz_lines, list) and len(mrz_lines) == 2:
+        try:
+            return parse_passport_mrz(mrz_lines)
+        except ValueError as error:
+            return _parse_visible_passport_fallback(file_path, "INVALID", str(error))
+
+    return _parse_visible_passport_fallback(
+        file_path,
+        "NOT_FOUND",
+        "No complete, checksum-valid TD3 MRZ pair was extracted.",
+    )
+
+
+def _parse_visible_passport_fallback(file_path: str, mrz_status: str, mrz_error: str) -> dict:
+    """Retain genuinely readable visible fields when MRZ evidence is absent."""
+    from app.services.ocr_service import extract_passport_identity_text, extract_text
+
+    try:
+        raw_text = extract_text(file_path).strip()
+    except Exception as error:
+        raw_text = ""
+        mrz_error = f"{mrz_error} OCR fallback unavailable: {error}"
+
+    try:
+        identity_text = extract_passport_identity_text(file_path).strip()
+    except Exception:
+        identity_text = ""
+
+    import re
+
+    def labeled(pattern: str) -> str | None:
+        match = re.search(pattern, raw_text, flags=re.IGNORECASE)
+        return match.group(1).strip().upper() if match else None
+
+    def labeled_date(pattern: str) -> str | None:
+        value = labeled(pattern)
+        if not value:
+            return None
+        match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", value)
+        if not match:
+            return None
+        day, month, year = match.groups()
+        if len(year) == 2:
+            return None
+        return f"{int(day):02d}/{int(month):02d}/{year}"
+
+    def date_near_label(label: str, prefer_last: bool = False) -> str | None:
+        """Read a date adjacent to a visible passport label.
+
+        Passport layouts commonly place a date beneath or beside its label,
+        not after a colon.  This fallback is used only when MRZ validation
+        could not establish a complete, checksum-valid pair.
+        """
+        label_match = re.search(label, raw_text, flags=re.IGNORECASE)
+        if not label_match:
+            return None
+        # Values in this layout are printed below the labels. The expiry
+        # label shares a row with issue date, so it intentionally selects the
+        # final nearby date (the value beneath the expiry column).
+        nearby_dates = re.findall(
+            r"\b\d{1,2}\s*[A-Z]{3}\s*\d{4}\b",
+            raw_text[label_match.end():label_match.end() + 240].upper(),
+        )
+        if not nearby_dates:
+            return None
+        if prefer_last:
+            # Ignore nearby entry-stamp dates: the expiry value is the latest
+            # fully printed calendar year in the label's local region.
+            value = max(nearby_dates, key=lambda item: int(re.search(r"\d{4}", item).group()))
+        else:
+            value = nearby_dates[0]
+        value = value.upper()
+        month_map = {
+            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+            "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+        }
+        parts = re.findall(r"\d+|[A-Z]{3}", value)
+        if len(parts) != 3 or parts[1] not in month_map:
+            return None
+        try:
+            return datetime(int(parts[2]), month_map[parts[1]], int(parts[0])).strftime("%d/%m/%Y")
+        except ValueError:
+            return None
+
+    # A passport number is accepted from visible text only in its usual
+    # letter-plus-seven-digits form. This avoids promoting arbitrary stamp
+    # dates or control values into an identity field.
+    visible_passport_numbers = set(re.findall(r"\b[A-Z]\d{7}\b", raw_text.upper()))
+    visible_passport_number = next(iter(visible_passport_numbers)) if len(visible_passport_numbers) == 1 else None
+
+    # India passports label nationality as "INDIAN" rather than its ICAO
+    # three-letter code. Preserve the standard code expected by validation.
+    visible_nationality = None
+    nationality_window = re.search(r"nationality[\s\S]{0,120}", raw_text, flags=re.IGNORECASE)
+    if nationality_window:
+        nationality_text = nationality_window.group(0).upper()
+        if re.search(r"\bINDIAN\b", nationality_text):
+            visible_nationality = "IND"
+
+    def value_below_label(label: str) -> str | None:
+        lines = raw_text.upper().splitlines()
+        for index, line in enumerate(lines):
+            if not re.search(label, line, flags=re.IGNORECASE):
+                continue
+            for candidate_line in lines[index + 1:index + 4]:
+                candidates = re.findall(r"\b[A-Z]{3,}\b", candidate_line)
+                if candidates:
+                    return candidates[0]
+        return None
+
+    def identity_value_below_label(label: str) -> str | None:
+        lines = identity_text.upper().splitlines()
+        for index, line in enumerate(lines):
+            if not re.search(label, line, flags=re.IGNORECASE):
+                continue
+            for candidate_line in lines[index + 1:index + 3]:
+                candidates = re.findall(r"\b[A-Z]{3,}\b", candidate_line)
+                if candidates:
+                    return candidates[0]
+        return None
+
+    surname = value_below_label(r"surname") or identity_value_below_label(r"surname")
+    given_names = value_below_label(r"given\s*name") or identity_value_below_label(r"given\s*name")
+    full_name = " ".join(value for value in (given_names, surname) if value) or None
+
+    visible_gender = None
+    sex_match = re.search(r"\bsex\b([\s\S]{0,180})", raw_text, flags=re.IGNORECASE)
+    if sex_match:
+        gender_match = re.search(r"(?:^|\n)\s*([MF])\b", sex_match.group(1).upper())
+        if gender_match:
+            visible_gender = "Male" if gender_match.group(1) == "M" else "Female"
+
+    return {
+        "document_type": "PASSPORT",
+        "surname": surname,
+        "given_names": given_names,
+        "full_name": full_name,
+        "passport_number": labeled(r"(?:passport\s*(?:number|no\.?))\s*[:#-]\s*([A-Z0-9]{6,12})(?:\s|$)") or visible_passport_number,
+        "nationality": labeled(r"nationality\s*[:#-]\s*([A-Z]{3})(?:\s|$)") or visible_nationality,
+        "date_of_birth": labeled_date(r"(?:date\s*of\s*birth|birth\s*date|dob)\s*[:#-]\s*([^\n]+)") or date_near_label(r"date\s*of\s*birth"),
+        "gender": visible_gender,
+        "expiry_date": labeled_date(r"(?:date\s*of\s*expiry|expiry\s*date|expiration\s*date)\s*[:#-]\s*([^\n]+)") or date_near_label(r"date\s*of\s*expiry", prefer_last=True),
+        "raw_text": raw_text,
+        "mrz": {"status": mrz_status, "error": mrz_error},
+    }
 
 
 def parse_passport_mrz(mrz_lines: list[str]) -> dict:
@@ -111,6 +253,7 @@ def parse_passport_mrz(mrz_lines: list[str]) -> dict:
         "optional_data": line2_data["optional_data"],
 
         "mrz": {
+            "status": "VALID",
             "line1": line1,
             "line2": line2,
             "raw_line1": raw_line1,

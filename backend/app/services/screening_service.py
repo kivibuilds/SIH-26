@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from copy import deepcopy
 from pathlib import Path
 
@@ -6,27 +5,25 @@ from pathlib import Path
 _SCREENING_CACHE = {}
 
 
-def generate_screening_result(file_path: str, document_type: str = None) -> dict:
+def generate_screening_result(file_path: str, document_type: str = None, face_file_path: str = None) -> dict:
     """Return a cached analysis unless the uploaded file has changed."""
     path = Path(file_path)
     cache_key = (
         str(path.resolve()),
         (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else None,
         (document_type or "").upper(),
+        str(face_file_path or ""),
     )
 
     if cache_key in _SCREENING_CACHE:
         return deepcopy(_SCREENING_CACHE[cache_key])
 
-    result = _generate_screening_result(file_path, document_type)
+    result = _generate_screening_result(file_path, document_type, face_file_path)
     _SCREENING_CACHE[cache_key] = deepcopy(result)
     return result
 
 
-def _generate_screening_result(file_path: str, document_type: str = None) -> dict:
-=======
-def generate_screening_result(file_path: str, document_type: str = None, face_file_path: str = None) -> dict:
->>>>>>> origin/main
+def _generate_screening_result(file_path: str, document_type: str = None, face_file_path: str = None) -> dict:
     """
     Generate a screening result for a saved document file.
 
@@ -67,13 +64,16 @@ def generate_screening_result(file_path: str, document_type: str = None, face_fi
         parsed = {"document_type": doc_type or "UNKNOWN", "raw_text": None}
 
     # MRZ verification
-    mrz_verification = {"status": "NOT_PRESENT", "confidence": 0.0}
+    mrz_verification = {"status": "NOT_FOUND", "confidence": 0.0}
     try:
         if parsed and parsed.get("mrz"):
             from app.services.ocr_service import validate_mrz_line2, validate_mrv_line2
             mrz = parsed.get("mrz")
             line2 = mrz.get("line2") if isinstance(mrz, dict) else (mrz[1] if isinstance(mrz, list) and len(mrz) > 1 else None)
-            if line2:
+            mrz_status = parsed["mrz"].get("status") if isinstance(parsed["mrz"], dict) else None
+            if mrz_status in {"NOT_FOUND", "UNREADABLE", "INVALID"}:
+                mrz_verification = {"status": mrz_status, "confidence": 0.0, "error": parsed["mrz"].get("error")}
+            elif line2:
                 if doc_type == "VISA":
                     ok = validate_mrv_line2(line2)
                 else:
@@ -88,6 +88,8 @@ def generate_screening_result(file_path: str, document_type: str = None, face_fi
     except Exception as error:
         ocr_analysis = {
             "confidence": None,
+            "tokens_detected": 0,
+            "tokens_requiring_review": 0,
             "fields_detected": 0,
             "fields_requiring_review": 0,
             "review_threshold": 70.0,
@@ -109,6 +111,32 @@ def generate_screening_result(file_path: str, document_type: str = None, face_fi
             tampering_result = {"detected": False, "confidence": 0.0, "indicators": [f"Tampering analysis failed: {error}"]}
     else:
         tampering_result = {"detected": False, "confidence": 0.0, "indicators": ["Tampering analysis unavailable (missing dependencies)"]}
+
+    stamp_analysis = {
+        "status": "NOT_APPLICABLE",
+        "stamp_regions": [],
+        "ocr_findings": [],
+        "anomalies": [],
+        "image_quality": {},
+        "indicators": [],
+        "message": None,
+        "limitations": [],
+    }
+    if doc_type in {"PASSPORT", "VISA"}:
+        try:
+            from app.services.stamp_analysis import analyze_stamp_regions
+            stamp_analysis = analyze_stamp_regions(file_path, doc_type)
+        except Exception as error:
+            stamp_analysis = {
+                "status": "INSUFFICIENT_EVIDENCE",
+                "stamp_regions": [],
+                "ocr_findings": [],
+                "anomalies": [],
+                "image_quality": {"quality_status": "UNAVAILABLE"},
+                "indicators": [],
+                "message": "The system could not confidently determine whether a passport or visa stamp is present.",
+                "limitations": [f"Stamp analysis was unavailable: {error}"],
+            }
 
     if face_file_path:
         try:
@@ -146,10 +174,23 @@ def generate_screening_result(file_path: str, document_type: str = None, face_fi
     if tampering_result.get("detected"):
         risk_score = max(risk_score, 90)
         reasons.append("Tampering indicators present")
+    if stamp_analysis.get("status") == "STAMP_DETECTED" and stamp_analysis.get("anomalies"):
+        risk_score = max(risk_score, 55)
+        reasons.append("Potential stamp visual anomalies require manual review")
     if face_verification.get("status") == "NOT_PERFORMED":
         reasons.append("Face verification was not performed")
 
     risk_level = "HIGH" if risk_score >= 75 else "MEDIUM" if risk_score >= 25 else "LOW"
+
+    structured_fields = sum(
+        1 for key, value in (parsed or {}).items()
+        if key not in {"raw_text", "mrz", "document_type"} and value not in (None, "")
+    )
+    ocr_analysis["structured_fields_detected"] = structured_fields
+    ocr_analysis["structured_fields_requiring_review"] = max(
+        0,
+        len([key for key, value in (parsed or {}).items() if key not in {"raw_text", "mrz", "document_type"} and value in (None, "")]),
+    )
 
     return {
         "extracted_data": parsed,
@@ -157,6 +198,7 @@ def generate_screening_result(file_path: str, document_type: str = None, face_fi
         "mrz_verification": mrz_verification,
         "document_validation": document_validation,
         "tampering_analysis": tampering_result,
+        "stamp_analysis": stamp_analysis,
         "face_verification": face_verification,
         "watchlist": watchlist,
         "risk": {"score": risk_score, "level": risk_level, "reasons": reasons},

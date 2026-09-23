@@ -121,7 +121,23 @@ def analyze_document(
 
     face_path = None
     if face_file is not None:
-        if face_file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        allowed_face_types = {"image/jpeg", "image/png", "image/webp"}
+        allowed_face_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
+        face_content_type = (face_file.content_type or "").lower()
+        face_suffix = Path(face_file.filename or "").suffix.lower()
+        face_header = face_file.file.read(12)
+        face_file.file.seek(0)
+        recognized_face_headers = (
+            face_header.startswith(b"\xff\xd8\xff")
+            or face_header.startswith(b"\x89PNG\r\n\x1a\n")
+            or face_header[:4] == b"RIFF" and face_header[8:12] == b"WEBP"
+        )
+        if (
+            face_content_type not in allowed_face_types
+            and face_suffix not in allowed_face_suffixes
+            and not face_content_type.startswith("image/")
+            and not recognized_face_headers
+        ):
             raise HTTPException(status_code=400, detail="Face capture must be a JPG, PNG, or WEBP image.")
         face_path = Path("uploads") / f"FACE-{uuid.uuid4().hex[:8].upper()}{Path(face_file.filename or '').suffix.lower() or '.jpg'}"
         with face_path.open("wb") as buffer:

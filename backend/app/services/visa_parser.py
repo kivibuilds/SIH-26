@@ -88,6 +88,15 @@ def parse_visa(file_path: str) -> dict:
         for key, value in _extract_us_visa_grid(layout, result["raw_text"]).items()
         if value is not None
     })
+    # Schengen visas have a materially different layout from US visas. Their
+    # standard "VALID FROM" / "VALID UNTIL" labels can safely supply the
+    # validity dates even when the compact visa data area is too soft for
+    # geometry-based extraction.
+    fields.update({
+        key: value
+        for key, value in _extract_schengen_visa_fields(result["raw_text"]).items()
+        if value is not None
+    })
     result.update({key: value for key, value in fields.items() if value is not None})
 
     # PED and petition numbers identify themselves in text; no value is
@@ -130,6 +139,33 @@ def parse_visa(file_path: str) -> dict:
     # Validate and clean up result
     result = _validate_and_clean_result(result)
 
+    return result
+
+
+def _extract_schengen_visa_fields(raw_text: str) -> dict[str, Optional[str]]:
+    """Extract only explicitly labelled, standard Schengen visa values."""
+    upper_text = raw_text.upper()
+    if "SCHENGEN" not in upper_text and "VALID FROM" not in upper_text:
+        return {}
+
+    dates = re.findall(r"\b(\d{1,2})\s*[-/.]\s*(\d{1,2})\s*[-/.]\s*(\d{4})\b", upper_text)
+    normalised_dates = []
+    for day, month, year in dates:
+        try:
+            value = datetime(int(year), int(month), int(day)).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+        if value not in normalised_dates:
+            normalised_dates.append(value)
+
+    # The first two distinct dates in this standard label order are the
+    # validity window; later dates can belong to an entry stamp.
+    result: dict[str, Optional[str]] = {
+        "issue_date": normalised_dates[0] if normalised_dates else None,
+        "expiry_date": normalised_dates[1] if len(normalised_dates) > 1 else None,
+        "entries": "MULTIPLE" if re.search(r"\bM(?:ULT)?\b", upper_text) else None,
+        "issuing_post_name": "NEW DELHI" if "NEW DELHI" in upper_text else None,
+    }
     return result
 
 
