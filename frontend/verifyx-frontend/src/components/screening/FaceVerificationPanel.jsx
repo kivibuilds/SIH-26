@@ -48,7 +48,7 @@ export function FaceVerificationPanel({
   return (
     <Panel
       title="Face Verification"
-      subtitle="Document portrait vs presented live face sample"
+      subtitle="Optional document portrait vs presented live face sample"
       action={
         <div className="flex items-center gap-2">
           <StatusChip status={status} size="xs" />

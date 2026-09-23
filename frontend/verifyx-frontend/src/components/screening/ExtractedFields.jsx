@@ -5,6 +5,8 @@ export function ExtractedFields({
   title = 'Extracted Document Information',
   className = '',
 }) {
+  const parsedFields = fields.filter((field) => field.value !== 'Not detected')
+  const missingFields = fields.filter((field) => field.value === 'Not detected')
   const getSourceBadge = (source) => {
     switch (source) {
       case 'MRZ':
@@ -34,7 +36,7 @@ export function ExtractedFields({
           {title}
         </h4>
         <span className="font-mono text-[11px] text-console-muted">
-          {fields.length} FIELDS PARSED
+          {parsedFields.length} FIELDS PARSED{missingFields.length > 0 ? ` • ${missingFields.length} NEED REVIEW` : ''}
         </span>
       </div>
 
@@ -50,7 +52,7 @@ export function ExtractedFields({
             </tr>
           </thead>
           <tbody className="divide-y divide-console-border/60 font-mono">
-            {fields.map((f, idx) => {
+            {parsedFields.map((f, idx) => {
               const confPct = typeof f.confidence === 'number' ? (f.confidence * 100).toFixed(0) : f.confidence
               return (
                 <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
@@ -81,6 +83,11 @@ export function ExtractedFields({
           </tbody>
         </table>
       </div>
+      {missingFields.length > 0 && (
+        <div className="border-t border-console-border px-4 py-3 text-[11px] text-amber-300">
+          Missing or uncertain: {missingFields.map((field) => field.key).join(', ')}
+        </div>
+      )}
     </div>
   )
 }

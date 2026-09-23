@@ -15,11 +15,7 @@ import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
 import UploadDropzone from '../components/screening/UploadDropzone'
 import DocumentPreview from '../components/screening/DocumentPreview'
-<<<<<<< HEAD
 import FaceVerificationPanel from '../components/screening/FaceVerificationPanel'
-=======
-import FaceCapture from '../components/screening/FaceCapture'
->>>>>>> origin/main
 
 export function NewScreeningPage() {
   const navigate = useNavigate()
@@ -28,11 +24,7 @@ export function NewScreeningPage() {
   const [travelerRef, setTravelerRef] = useState('')
   const [travelerName, setTravelerName] = useState('')
   const [file, setFile] = useState(null)
-<<<<<<< HEAD
   const [selfieFile, setSelfieFile] = useState(null)
-=======
-  const [faceFile, setFaceFile] = useState(null)
->>>>>>> origin/main
   const [fileError, setFileError] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -85,11 +77,6 @@ export function NewScreeningPage() {
       return
     }
 
-    if (!faceFile) {
-      setSubmitError('Please start the live camera and capture your face before starting screening.')
-      return
-    }
-
     try {
       setIsSubmitting(true)
 
@@ -106,18 +93,13 @@ export function NewScreeningPage() {
 
       const backendDocumentType = documentType === 'National ID' ? 'AADHAAR' : documentType.toUpperCase()
       const uploaded = await uploadDocument(backendDocumentType, file)
-<<<<<<< HEAD
-      const result = await analyzeDocument(uploaded.document_id)
+      const result = await analyzeDocument(uploaded.document_id, selfieFile)
       navigate(ROUTES.SCREENING_RESULT(result.screening_id), {
         state: { screeningResult: result.normalized },
       })
-=======
-      const result = await analyzeDocument(uploaded.document_id, faceFile)
-      navigate(ROUTES.SCREENING_RESULT(result.screening_id))
->>>>>>> origin/main
     } catch (err) {
       console.error('Failed to initiate screening:', err)
-      setSubmitError(err.message || 'Failed to initiate screening pipeline.')
+      setSubmitError(err.response?.data?.detail || err.message || 'Failed to initiate screening pipeline.')
       setIsSubmitting(false)
     }
   }
@@ -254,7 +236,6 @@ export function NewScreeningPage() {
             />
           </Panel>
 
-<<<<<<< HEAD
           <FaceVerificationPanel
             documentFile={file}
             selfieFile={selfieFile}
@@ -262,14 +243,6 @@ export function NewScreeningPage() {
             onSelfieSelect={handleSelfieSelect}
             onUseSample={handleUseSampleFace}
           />
-=======
-          <Panel
-            title="Step 3 • Phone Face Capture"
-            subtitle="Use the phone camera for a live selfie"
-          >
-            <FaceCapture file={faceFile} onCapture={setFaceFile} onClear={() => setFaceFile(null)} />
-          </Panel>
->>>>>>> origin/main
 
           {/* Screening Submission Trigger */}
           <div className="flex items-center justify-between border border-console-border bg-console-panel p-4">
@@ -285,7 +258,7 @@ export function NewScreeningPage() {
               loading={isSubmitting}
               icon={Play}
               onClick={handleStartScreening}
-              disabled={!file || !faceFile}
+              disabled={!file}
               className="text-xs tracking-wider"
             >
               Start Screening Pipeline

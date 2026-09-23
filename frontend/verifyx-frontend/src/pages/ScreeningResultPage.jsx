@@ -18,6 +18,7 @@ import Button from '../components/ui/Button'
 import StatusChip from '../components/ui/StatusChip'
 import RiskGauge from '../components/screening/RiskGauge'
 import DocumentPreview from '../components/screening/DocumentPreview'
+import StampAnalysisPanel from '../components/screening/StampAnalysisPanel'
 
 export function ScreeningResultPage() {
   const { id } = useParams()
@@ -144,6 +145,8 @@ export function ScreeningResultPage() {
         recommendedAction={result.recommendedAction}
         criticalFindings={highRiskCriticalFindings}
       />
+
+      <StampAnalysisPanel analysis={result.stampAnalysis} documentType={result.documentType} />
 
       {/* Main Grid: Verification Modules & Document Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

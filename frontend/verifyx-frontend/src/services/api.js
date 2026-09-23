@@ -11,9 +11,6 @@ const SYNTHETIC_BASELINE_COUNT = 1284
 
 export const api = axios.create({
   baseURL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 })
 
 // Attach auth token if present
@@ -78,9 +75,7 @@ export async function uploadDocument(screeningId, file) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('document_type', screeningId)
-  const res = await api.post('/documents/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  const res = await api.post('/documents/upload', formData)
   return res.data
 }
 
@@ -139,13 +134,18 @@ export async function updateScreeningStatus(id, status, updates = {}) {
   return { id, status, ...updates }
 }
 
-<<<<<<< HEAD
-export async function analyzeDocument(documentId) {
-  const res = await api.post(`/screening/analyze/${documentId}`)
-  return {
-    ...res.data,
-    normalized: normalizeScreening(res.data),
-  }
+export async function analyzeDocument(documentId, faceFile = null) {
+  // Do not send an empty multipart request. FastAPI attempts to parse it as a
+  // multipart body and rejects it before reaching the optional face_file field.
+  const payload = faceFile
+    ? (() => {
+        const formData = new FormData()
+        formData.append('face_file', faceFile)
+        return formData
+      })()
+    : undefined
+  const res = await api.post(`/screening/analyze/${documentId}`, payload)
+  return { ...res.data, normalized: normalizeScreening(res.data) }
 }
 
 export async function verifyUploadedDocument(screeningId, file) {
@@ -161,15 +161,7 @@ export async function verifyUploadedDocument(screeningId, file) {
   }
   const formData = new FormData()
   formData.append('file', file)
-  const res = await api.post(`/audit/${screeningId}/verify-upload`, formData, {
-=======
-export async function analyzeDocument(documentId, faceFile = null) {
-  const formData = new FormData()
-  if (faceFile) formData.append('face_file', faceFile)
-  const res = await api.post(`/screening/analyze/${documentId}`, formData, {
->>>>>>> origin/main
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  const res = await api.post(`/audit/${screeningId}/verify-upload`, formData)
   return res.data
 }
 
@@ -219,17 +211,24 @@ function normalizeScreening(data) {
         status: value ? 'valid' : 'review',
       })),
     findings,
+    stampAnalysis: data.stamp_analysis || null,
     ocrAnalysis: {
       confidence: data.ocr_analysis?.confidence,
-      fieldsDetected: data.ocr_analysis?.fields_detected,
-      fieldsRequiringReview: data.ocr_analysis?.fields_requiring_review,
+      tokensDetected: data.ocr_analysis?.tokens_detected ?? data.ocr_analysis?.fields_detected,
+      tokensRequiringReview: data.ocr_analysis?.tokens_requiring_review ?? data.ocr_analysis?.fields_requiring_review,
+      structuredFieldsDetected: data.ocr_analysis?.structured_fields_detected,
+      structuredFieldsRequiringReview: data.ocr_analysis?.structured_fields_requiring_review,
+      fieldsDetected: data.ocr_analysis?.tokens_detected ?? data.ocr_analysis?.fields_detected,
+      fieldsRequiringReview: data.ocr_analysis?.tokens_requiring_review ?? data.ocr_analysis?.fields_requiring_review,
       reviewThreshold: data.ocr_analysis?.review_threshold,
       engineVersion: 'Tesseract OCR',
+      rawText: import.meta.env.DEV ? extracted.raw_text || '' : null,
+      words: import.meta.env.DEV ? data.ocr_analysis?.words || [] : [],
     },
     mrzVerification: {
       ...data.mrz_verification,
-      checkDigits: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'REVIEW',
-      ocrConsistency: mrzPassed ? 'VALID' : 'REVIEW',
+      checkDigits: data.mrz_verification?.status || 'NOT_FOUND',
+      ocrConsistency: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'NOT_FOUND',
     },
     documentValidation: {
       ...data.document_validation,
