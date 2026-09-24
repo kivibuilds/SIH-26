@@ -4,6 +4,7 @@ import { Scan } from 'lucide-react'
 export function DocumentPreview({
   file,
   screening,
+  mode = 'default',
   showControls = true,
   className = '',
 }) {

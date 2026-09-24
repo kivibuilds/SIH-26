@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pathlib import Path
 import hashlib
+import json
 from typing import cast
 
 from app.database.database import get_db
@@ -22,13 +23,15 @@ router = APIRouter(
 )
 
 
-def _integrity_result(uploaded_hash, stored_hash, chain_hash, blockchain_confirmed):
+def _integrity_result(uploaded_hash, stored_hash, chain_hash, blockchain_confirmed, change_reasons=None):
     matches_stored = uploaded_hash == stored_hash
     matches_chain = blockchain_confirmed and chain_hash is not None and uploaded_hash == chain_hash
     if not blockchain_confirmed or chain_hash is None:
         failure_reason = "Blockchain record is unavailable, so the document cannot be verified against the registered hash."
     elif not matches_chain:
         failure_reason = "Document hash does not match the blockchain-registered hash. The uploaded file may have been modified."
+        if change_reasons:
+            failure_reason += " Reasons: " + " ".join(change_reasons)
     else:
         failure_reason = None
     return {
@@ -170,7 +173,7 @@ def verify_record_integrity(
     local_match = recalculated_hash == record.record_hash
     chain_record = None
     blockchain_match = None
-    is_recorded = cast(str, record.blockchain_status) == "CONFIRMED"
+    is_recorded = cast(str, record.blockchain_status) in ("CONFIRMED", "REUSED")
 
     try:
         if is_recorded and bool(blockchain_status()["connected"]):
@@ -220,20 +223,28 @@ def verify_uploaded_document(
 
     chain_hash = None
     verification_transaction = None
-    is_recorded = cast(str, record.blockchain_status) == "CONFIRMED"
+    is_recorded = cast(str, record.blockchain_status) in ("CONFIRMED", "REUSED")
     try:
-        if is_recorded and bool(blockchain_status()["connected"]):
+        if record.blockchain_status == "CONFIRMED" and bool(blockchain_status()["connected"]):
             chain_hash = get_document(screening_id)["document_hash"]
+        elif record.blockchain_status == "REUSED":
+            chain_hash = record.document_hash
     except Exception:
         pass
 
     expected_hash = chain_hash or record.document_hash
     verified = uploaded_hash == expected_hash
+    try:
+        stored_payload = json.loads(record.result_payload)
+        change_reasons = stored_payload.get("document_integrity", {}).get("change_reasons", [])
+    except (TypeError, ValueError):
+        change_reasons = []
     blockchain_result = _integrity_result(
         uploaded_hash,
         record.document_hash,
         chain_hash,
         is_recorded,
+        change_reasons=change_reasons if uploaded_hash != expected_hash else None,
     )
     blockchain_verified = blockchain_result["verified"]
     if blockchain_verified:
@@ -252,7 +263,10 @@ def verify_uploaded_document(
             if verification_transaction is not None
             else None
         ),
-        details="Re-uploaded document hash comparison.",
+        details=(
+            "Re-uploaded document hash comparison. "
+            + ("Reasons: " + " ".join(change_reasons) if change_reasons and not verified else "")
+        ),
     ))
     db.commit()
     return {

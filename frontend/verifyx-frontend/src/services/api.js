@@ -1,16 +1,15 @@
 import axios from 'axios'
 import mockHandlers from './mock/handlers'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || (
-  window.location.protocol === 'https:'
-    ? `${window.location.origin}/api`
-    : `http://${window.location.hostname}:8000/api`
-)
+const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
 export const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 const SYNTHETIC_BASELINE_COUNT = 1284
 
 export const api = axios.create({
   baseURL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 })
 
 // Attach auth token if present
@@ -75,7 +74,9 @@ export async function uploadDocument(screeningId, file) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('document_type', screeningId)
-  const res = await api.post('/documents/upload', formData)
+  const res = await api.post('/documents/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
   return res.data
 }
 
@@ -134,35 +135,12 @@ export async function updateScreeningStatus(id, status, updates = {}) {
   return { id, status, ...updates }
 }
 
-export async function analyzeDocument(documentId, faceFile = null) {
-  // Do not send an empty multipart request. FastAPI attempts to parse it as a
-  // multipart body and rejects it before reaching the optional face_file field.
-  const payload = faceFile
-    ? (() => {
-        const formData = new FormData()
-        formData.append('face_file', faceFile)
-        return formData
-      })()
-    : undefined
-  const res = await api.post(`/screening/analyze/${documentId}`, payload)
-  return { ...res.data, normalized: normalizeScreening(res.data) }
-}
-
-export async function verifyUploadedDocument(screeningId, file) {
-  if (useMock) {
-    return {
-      screening_id: screeningId,
-      integrity: 'VERIFIED',
-      verified: true,
-      blockchain_status: 'MOCK_CONFIRMED',
-      transaction_hash: null,
-      verification_transaction_hash: null,
-    }
+export async function analyzeDocument(documentId) {
+  const res = await api.post(`/screening/analyze/${documentId}`)
+  return {
+    ...res.data,
+    normalized: normalizeScreening(res.data),
   }
-  const formData = new FormData()
-  formData.append('file', file)
-  const res = await api.post(`/audit/${screeningId}/verify-upload`, formData)
-  return res.data
 }
 
 function normalizeScreening(data) {
@@ -211,24 +189,17 @@ function normalizeScreening(data) {
         status: value ? 'valid' : 'review',
       })),
     findings,
-    stampAnalysis: data.stamp_analysis || null,
     ocrAnalysis: {
       confidence: data.ocr_analysis?.confidence,
-      tokensDetected: data.ocr_analysis?.tokens_detected ?? data.ocr_analysis?.fields_detected,
-      tokensRequiringReview: data.ocr_analysis?.tokens_requiring_review ?? data.ocr_analysis?.fields_requiring_review,
-      structuredFieldsDetected: data.ocr_analysis?.structured_fields_detected,
-      structuredFieldsRequiringReview: data.ocr_analysis?.structured_fields_requiring_review,
-      fieldsDetected: data.ocr_analysis?.tokens_detected ?? data.ocr_analysis?.fields_detected,
-      fieldsRequiringReview: data.ocr_analysis?.tokens_requiring_review ?? data.ocr_analysis?.fields_requiring_review,
+      fieldsDetected: data.ocr_analysis?.fields_detected,
+      fieldsRequiringReview: data.ocr_analysis?.fields_requiring_review,
       reviewThreshold: data.ocr_analysis?.review_threshold,
       engineVersion: 'Tesseract OCR',
-      rawText: import.meta.env.DEV ? extracted.raw_text || '' : null,
-      words: import.meta.env.DEV ? data.ocr_analysis?.words || [] : [],
     },
     mrzVerification: {
       ...data.mrz_verification,
-      checkDigits: data.mrz_verification?.status || 'NOT_FOUND',
-      ocrConsistency: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'NOT_FOUND',
+      checkDigits: mrzPassed ? 'VALID' : data.mrz_verification?.status || 'REVIEW',
+      ocrConsistency: mrzPassed ? 'VALID' : 'REVIEW',
     },
     documentValidation: {
       ...data.document_validation,
@@ -236,11 +207,13 @@ function normalizeScreening(data) {
       dateValidity: data.document_validation?.expiry_status || 'UNKNOWN',
       crossFieldConsistency: data.document_validation?.checks?.consistency ? 'VALID' : 'REVIEW',
     },
+    documentIntegrity: data.document_integrity || {},
     forensics: {
       ...data.tampering_analysis,
       tamperingConfidence: Number(data.tampering_analysis?.confidence || 0) * 100,
       textManipulation: data.tampering_analysis?.detected ? 'DETECTED' : 'NOT DETECTED',
     },
+    stampAnalysis: data.stamp_analysis,
     faceVerification: {
       ...data.face_verification,
       similarityScore: data.face_verification?.confidence == null ? null : Number(data.face_verification.confidence) * 100,
@@ -250,15 +223,7 @@ function normalizeScreening(data) {
       ...data.watchlist,
       status: data.watchlist?.match ? 'FLAGGED' : 'CLEAR',
     },
-    audit: {
-      ...data.blockchain,
-      verificationId: data.screening_id,
-      txRef: data.blockchain?.transaction_hash,
-      status: data.blockchain?.status,
-      blockNumber: data.blockchain?.block_number,
-      documentHash: data.blockchain?.document_hash,
-      error: data.blockchain?.error,
-    },
+    audit: data.blockchain,
     status: 'complete',
   }
 }
@@ -275,6 +240,5 @@ export default {
   listScreenings,
   getAnalytics,
   updateScreeningStatus,
-  verifyUploadedDocument,
   useMock,
 }

@@ -7,9 +7,13 @@ import {
   ArrowRight,
   RefreshCw,
   Printer,
-  Upload,
+  FileCheck,
+  UserCheck,
+  Layers,
+  Database,
+  Search,
 } from 'lucide-react'
-import { getScreeningResult, verifyUploadedDocument } from '../services/api'
+import { getScreeningResult } from '../services/api'
 import { ROUTES } from '../constants/routes'
 import { formatDateTime } from '../utils/format'
 import PageHeader from '../components/layout/PageHeader'
@@ -26,14 +30,10 @@ export function ScreeningResultPage() {
   const location = useLocation()
 
   const [result, setResult] = useState(location.state?.screeningResult || null)
-  const [loading, setLoading] = useState(!location.state?.screeningResult)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [integrity, setIntegrity] = useState(null)
-  const [integrityLoading, setIntegrityLoading] = useState(false)
 
   useEffect(() => {
-    if (location.state?.screeningResult) return undefined
-
     let mounted = true
 
     const fetchResult = async () => {
@@ -57,7 +57,7 @@ export function ScreeningResultPage() {
     return () => {
       mounted = false
     }
-  }, [id, location.state])
+  }, [id])
 
   if (loading) {
     return (
@@ -85,25 +85,10 @@ export function ScreeningResultPage() {
   }
 
   const checks = result.checks || {}
+  const documentIntegrity = result.documentIntegrity || {}
   const isHighRisk = result.decision === 'high_risk' || result.overallScore >= 70
 
   const highRiskCriticalFindings = isHighRisk ? result.findings || [] : []
-  const audit = result.audit || {}
-
-  const handleIntegrityCheck = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      setIntegrityLoading(true)
-      setIntegrity(null)
-      setIntegrity(await verifyUploadedDocument(result.id, file))
-    } catch (err) {
-      setIntegrity({ integrity: 'FAILED', error: err.message || 'Integrity verification failed.' })
-    } finally {
-      setIntegrityLoading(false)
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -145,8 +130,6 @@ export function ScreeningResultPage() {
         recommendedAction={result.recommendedAction}
         criticalFindings={highRiskCriticalFindings}
       />
-
-      <StampAnalysisPanel analysis={result.stampAnalysis} documentType={result.documentType} />
 
       {/* Main Grid: Verification Modules & Document Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -306,46 +289,60 @@ export function ScreeningResultPage() {
             </div>
           </Panel>
 
-          {/* Prototype Audit Record */}
+          <StampAnalysisPanel
+            analysis={result.stampAnalysis}
+            documentType={result.documentType}
+          />
+
+          {/* Audit Record */}
           <div className="border border-console-border bg-console-panel p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono text-xs">
+            {(() => {
+              const auditStatus = result.audit?.status || (result.audit?.recorded ? 'CONFIRMED' : 'PENDING')
+              const isMismatch = auditStatus === 'MISMATCH'
+              return (
+                <>
             <div>
               <p className="text-[10px] uppercase font-semibold text-console-muted tracking-wider">
-                Verification Audit Record
+                Blockchain Audit Record
               </p>
-              <p className="text-console-text font-bold mt-0.5">ID: {audit.verificationId || result.id}</p>
+              <p className="text-console-text font-bold mt-0.5">
+                Ref: {result.audit?.transaction_hash || result.audit?.txRef || (isMismatch ? 'Not registered' : 'Pending')}
+              </p>
               <p className="text-[10px] text-console-muted">
-                SHA-256: {audit.documentHash || 'Unavailable'}
+                Block: {result.audit?.block_number || (isMismatch ? 'Not written' : 'Pending')}
               </p>
-              <p className="text-[10px] text-console-muted break-all">TX: {audit.txRef || 'Unavailable'}</p>
-              <p className="text-[10px] text-console-muted">Block: {audit.blockNumber ?? 'Unavailable'}</p>
             </div>
             <div className="border border-console-border/80 bg-console-raised px-2.5 py-1 text-[10px] text-console-accent font-semibold uppercase">
-              STATUS: {audit.status || 'PENDING'}
+              STATUS: {auditStatus}
             </div>
+                </>
+              )
+            })()}
           </div>
-
-          <div className="border border-console-border bg-console-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] uppercase font-semibold text-console-muted tracking-wider">Document Integrity</p>
-              <p className={`text-xs mt-1 font-semibold ${integrity?.integrity === 'VERIFIED' ? 'text-emerald-400' : integrity?.integrity === 'FAILED' ? 'text-rose-300' : 'text-console-text'}`}>
-                {integrity?.integrity || 'Not checked'}
+          {documentIntegrity.status && documentIntegrity.status !== 'NEW' && (
+            <div className={`border p-4 space-y-2 font-mono text-xs ${documentIntegrity.hash_changed ? 'border-rose-900/70 bg-rose-950/25' : 'border-emerald-900/60 bg-emerald-950/20'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] uppercase font-semibold tracking-wider text-console-muted">
+                  Document Identity Comparison
+                </p>
+                <StatusChip status={documentIntegrity.status} size="xs" />
+              </div>
+              <p className="text-console-muted">
+                {documentIntegrity.hash_changed
+                  ? `Hash mismatch against ${documentIntegrity.reference_screening_id || 'the prior screening'}.`
+                  : 'Exact file hash matched a previous screening; the existing blockchain registration was reused.'}
               </p>
-              {integrity && (
-                <div className="mt-2 space-y-1 text-[10px] text-console-muted font-mono">
-                  <p>Registered hash: <span className="break-all text-console-text">{integrity.registered_hash || integrity.expected_hash || 'Unavailable'}</span></p>
-                  <p>Uploaded hash: <span className="break-all text-console-text">{integrity.uploaded_hash || 'Unavailable'}</span></p>
-                  <p>Hash status: <span className={integrity.match_status === 'MATCH' ? 'text-emerald-400' : 'text-rose-300'}>{integrity.match_status || (integrity.blockchain_match ? 'MATCH' : 'MISMATCH')}</span></p>
-                </div>
+              <div className="grid grid-cols-1 gap-1 text-[10px] text-console-muted break-all">
+                <span>Uploaded SHA-256: {documentIntegrity.uploaded_hash || 'Unavailable'}</span>
+                <span>Registered SHA-256: {documentIntegrity.registered_hash || 'Unavailable'}</span>
+              </div>
+              {documentIntegrity.change_reasons?.length > 0 && (
+                <ul className="list-disc pl-4 space-y-1 text-rose-300">
+                  {documentIntegrity.change_reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                </ul>
               )}
-              {integrity?.failure_reason && <p className="text-[10px] text-rose-300 mt-2">{integrity.failure_reason}</p>}
-              {integrity?.error && <p className="text-[10px] text-rose-300 mt-1">{integrity.error}</p>}
             </div>
-            <label className="inline-flex items-center justify-center gap-2 h-9 px-3.5 text-xs uppercase font-medium bg-console-raised text-console-text border border-console-border hover:border-console-border-strong cursor-pointer">
-              <Upload className="h-3.5 w-3.5" />
-              <span>{integrityLoading ? 'Checking...' : 'Verify Re-upload'}</span>
-              <input type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={handleIntegrityCheck} disabled={integrityLoading} />
-            </label>
-          </div>
+          )}
         </div>
 
         {/* Right: Document Scan Inspection Visualizer */}

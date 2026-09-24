@@ -24,6 +24,59 @@ EDITING_SOFTWARE_KEYWORDS = [
  
 ELA_JPEG_QUALITY = 90
 BLOCK_SIZE = 16
+
+
+def compare_document_files(reference_path: str, uploaded_path: str) -> dict:
+    """Compare an uploaded image with the previously registered image."""
+    try:
+        with Image.open(reference_path) as reference_image, Image.open(uploaded_path) as uploaded_image:
+            reference_rgb = reference_image.convert("RGB")
+            uploaded_rgb = uploaded_image.convert("RGB")
+            reference_array = np.asarray(reference_rgb, dtype=np.int16)
+            uploaded_array = np.asarray(uploaded_rgb, dtype=np.int16)
+            result = {
+                "reference_format": (reference_image.format or "UNKNOWN").upper(),
+                "uploaded_format": (uploaded_image.format or "UNKNOWN").upper(),
+                "reference_dimensions": {"width": reference_rgb.width, "height": reference_rgb.height},
+                "uploaded_dimensions": {"width": uploaded_rgb.width, "height": uploaded_rgb.height},
+            }
+            if reference_array.shape != uploaded_array.shape:
+                result.update({
+                    "comparison": "DIMENSIONS_CHANGED",
+                    "changed_pixels": None,
+                    "changed_pixel_percentage": None,
+                    "changed_region": None,
+                })
+                return result
+
+            changed_mask = np.any(reference_array != uploaded_array, axis=2)
+            changed_coordinates = np.argwhere(changed_mask)
+            changed_pixels = int(changed_mask.sum())
+            total_pixels = int(changed_mask.size)
+            if changed_pixels:
+                top, left = changed_coordinates.min(axis=0)
+                bottom, right = changed_coordinates.max(axis=0)
+                changed_region = {
+                    "x": int(left),
+                    "y": int(top),
+                    "width": int(right - left + 1),
+                    "height": int(bottom - top + 1),
+                }
+            else:
+                changed_region = None
+            result.update({
+                "comparison": "PIXELS_CHANGED" if changed_pixels else "IDENTICAL_PIXELS",
+                "changed_pixels": changed_pixels,
+                "total_pixels": total_pixels,
+                "changed_pixel_percentage": round(changed_pixels / total_pixels * 100, 4),
+                "changed_region": changed_region,
+            })
+            return result
+    except (OSError, ValueError) as error:
+        return {
+            "comparison": "PIXEL_COMPARISON_UNAVAILABLE",
+            "reason": str(error),
+        }
  
 # Z-score-style anomaly ratios above which a block is considered
 # a localized outlier. Divided into the raw ratio to normalize

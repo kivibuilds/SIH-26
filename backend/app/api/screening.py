@@ -1,11 +1,9 @@
-import uuid
-import hashlib
-import json
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
-import shutil
+import hashlib
+import json
+import uuid
 
 from app.database.database import get_db
 from app.database.models import (
@@ -15,8 +13,9 @@ from app.database.models import (
     AuditEvent,
     VerificationRecord,
 )
-from app.blockchain.blockchain_service import record_document
+
 from app.services.screening_service import generate_screening_result
+from app.blockchain.blockchain_service import record_document
 
 
 router = APIRouter(
@@ -25,68 +24,72 @@ router = APIRouter(
 )
 
 
-def _record_payload(screening_id, document, result):
-    return {
-        "screening_id": screening_id,
-        "document": {
-            "document_id": document.document_id,
-            "filename": document.filename,
-            "type": document.document_type,
-        },
-        **result,
-    }
-
-
-def _record_hash(payload):
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def _file_hash(file_path):
     digest = hashlib.sha256()
-    with open(file_path, "rb") as file:
+    with Path(file_path).open("rb") as file:
         while chunk := file.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
 
 
-def _apply_blockchain_result(record, blockchain):
-    if blockchain["status"] != 1:
+def _record_hash(payload):
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _apply_blockchain_result(record, transaction):
+    if transaction.get("status") != 1:
         record.blockchain_status = "FAILED"
         record.blockchain_error = "Blockchain transaction receipt reported failure."
         return
     record.blockchain_status = "CONFIRMED"
     record.blockchain_error = None
-    record.blockchain_tx = blockchain["transaction_hash"]
-    record.block_number = blockchain["block_number"]
+    record.blockchain_tx = transaction["transaction_hash"]
+    record.block_number = transaction["block_number"]
 
 
-def _blockchain_response(record):
-    return {
-        "recorded": record.blockchain_status == "CONFIRMED",
-        "status": record.blockchain_status,
-        "hash": record.document_hash,
-        "document_hash": record.document_hash,
-        "result_hash": record.record_hash,
-        "transaction_hash": record.blockchain_tx,
-        "block_number": record.block_number,
-        "error": record.blockchain_error,
-    }
+def _document_identity(document_type, extracted_data):
+    extracted_data = extracted_data or {}
+    for key in ("passport_number", "visa_number", "aadhaar_number", "document_number"):
+        value = extracted_data.get(key)
+        if value:
+            return document_type, key, str(value).strip().upper()
+    return None
 
 
-def _response(screening, document, payload, record):
-    return {
-        "screening_id": screening.screening_id,
-        "document": {
-            "document_id": document.document_id,
-            "filename": document.filename,
-            "type": document.document_type,
-            "status": "ANALYZED",
-        },
-        **{key: value for key, value in payload.items() if key not in {"screening_id", "document"}},
-        "blockchain": _blockchain_response(record),
-        "created_at": screening.created_at,
-    }
+def _find_prior_record(db, document_type, extracted_data, document_hash=None):
+    if document_hash:
+        exact_match = (
+            db.query(VerificationRecord)
+            .filter(
+                VerificationRecord.document_hash == document_hash,
+                VerificationRecord.blockchain_status.in_(("CONFIRMED", "REUSED")),
+            )
+            .order_by(VerificationRecord.created_at.desc())
+            .first()
+        )
+        if exact_match:
+            return exact_match
+    identity = _document_identity(document_type, extracted_data)
+    if not identity:
+        return None
+    records = (
+        db.query(VerificationRecord)
+        .filter(
+            VerificationRecord.document_type == document_type,
+            VerificationRecord.blockchain_status.in_(("CONFIRMED", "REUSED")),
+        )
+        .order_by(VerificationRecord.created_at.desc())
+        .all()
+    )
+    for record in records:
+        try:
+            payload = json.loads(record.result_payload)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if _document_identity(document_type, payload.get("extracted_data")) == identity:
+            return record
+    return None
 
 
 # =========================================================
@@ -96,7 +99,6 @@ def _response(screening, document, payload, record):
 @router.post("/analyze/{document_id}")
 def analyze_document(
     document_id: str,
-    face_file: UploadFile | None = File(default=None),
     db: Session = Depends(get_db)
 ):
     # Find uploaded document
@@ -119,35 +121,7 @@ def analyze_document(
     # Get screening result from service
     # -----------------------------------------------------
 
-    face_path = None
-    if face_file is not None:
-        allowed_face_types = {"image/jpeg", "image/png", "image/webp"}
-        allowed_face_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
-        face_content_type = (face_file.content_type or "").lower()
-        face_suffix = Path(face_file.filename or "").suffix.lower()
-        face_header = face_file.file.read(12)
-        face_file.file.seek(0)
-        recognized_face_headers = (
-            face_header.startswith(b"\xff\xd8\xff")
-            or face_header.startswith(b"\x89PNG\r\n\x1a\n")
-            or face_header[:4] == b"RIFF" and face_header[8:12] == b"WEBP"
-        )
-        if (
-            face_content_type not in allowed_face_types
-            and face_suffix not in allowed_face_suffixes
-            and not face_content_type.startswith("image/")
-            and not recognized_face_headers
-        ):
-            raise HTTPException(status_code=400, detail="Face capture must be a JPG, PNG, or WEBP image.")
-        face_path = Path("uploads") / f"FACE-{uuid.uuid4().hex[:8].upper()}{Path(face_file.filename or '').suffix.lower() or '.jpg'}"
-        with face_path.open("wb") as buffer:
-            shutil.copyfileobj(face_file.file, buffer)
-
-    try:
-        result = generate_screening_result(document.file_path, document.document_type, face_path)
-    finally:
-        if face_path is not None:
-            face_path.unlink(missing_ok=True)
+    result = generate_screening_result(document.file_path, document.document_type)
 
     # -----------------------------------------------------
     # Store extracted data
@@ -206,45 +180,153 @@ def analyze_document(
 
     db.add(screening)
 
-    payload = _record_payload(screening_id, document, result)
+    # Save to database
+    db.commit()
+
+    # Persist a tamper-evident result and register the uploaded file hash.
+    # Blockchain outages leave the record pending so the audit retry endpoint
+    # can complete registration later without losing the local evidence.
     document_hash = _file_hash(document.file_path)
-    result_hash = _record_hash(payload)
-    verification = VerificationRecord(
+    prior_record = _find_prior_record(db, document.document_type, extracted_data, document_hash)
+    same_content = prior_record is not None and prior_record.document_hash == document_hash
+    changed_content = prior_record is not None and prior_record.document_hash != document_hash
+    integrity = {
+        "status": "UNCHANGED" if same_content else "MISMATCH" if changed_content else "NEW",
+        "same_document": prior_record is not None,
+        "hash_changed": changed_content,
+        "uploaded_hash": document_hash,
+        "registered_hash": prior_record.document_hash if prior_record else document_hash,
+        "reference_screening_id": prior_record.screening_id if prior_record else None,
+        "change_reasons": [],
+    }
+    if changed_content:
+        tamper_details = tampering.get("details", {})
+        metadata = tamper_details.get("metadata", {})
+        prior_screening = (
+            db.query(Screening)
+            .filter(Screening.screening_id == prior_record.screening_id)
+            .first()
+        )
+        prior_document = (
+            db.query(Document)
+            .filter(Document.document_id == prior_screening.document_id)
+            .first()
+            if prior_screening
+            else None
+        )
+        if prior_document and Path(prior_document.file_path).exists():
+            from app.services.tampering_service import compare_document_files
+            pixel_comparison = compare_document_files(prior_document.file_path, document.file_path)
+            integrity["pixel_comparison"] = pixel_comparison
+            if pixel_comparison.get("comparison") == "PIXELS_CHANGED":
+                integrity["change_reasons"].append(
+                    "Pixel changes detected: "
+                    f"{pixel_comparison['changed_pixels']} pixels "
+                    f"({pixel_comparison['changed_pixel_percentage']}%) changed "
+                    f"inside region {pixel_comparison['changed_region']}."
+                )
+            elif pixel_comparison.get("comparison") == "DIMENSIONS_CHANGED":
+                integrity["change_reasons"].append("Image dimensions changed.")
+        if tampering.get("detected"):
+            integrity["change_reasons"].extend(tampering.get("indicators", []))
+        if metadata.get("editing_software_detected"):
+            integrity["change_reasons"].append("Editing software metadata changed or was added.")
+        if not integrity["change_reasons"]:
+            integrity["change_reasons"].append(
+                "The file bytes changed, but the forensic analyzer could not localize the change."
+            )
+        result["risk"]["reasons"].append(
+            "Document hash mismatch: the same document identity was uploaded with different file bytes."
+        )
+        result["risk"]["score"] = max(result["risk"]["score"], 90)
+        result["risk"]["level"] = "HIGH"
+    result["document_integrity"] = integrity
+    result_payload = json.dumps(result, sort_keys=True, default=str)
+
+    verification_record = VerificationRecord(
         screening_id=screening_id,
         document_type=document.document_type,
-        result_payload=json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str),
+        result_payload=result_payload,
         document_hash=document_hash,
-        record_hash=result_hash,
+        record_hash=_record_hash(result),
         risk_score=risk["score"],
         risk_level=risk["level"],
-        mrz_status=(result.get("mrz_verification") or {}).get("status"),
-        tampering_detected=tampering["detected"],
+        mrz_status=result["mrz_verification"].get("status"),
+        tampering_detected=tampering.get("detected"),
         tampering_confidence=tampering.get("confidence"),
-        blockchain_status="PENDING",
+        blockchain_status="MISMATCH" if changed_content else "PENDING",
     )
-    db.add(verification)
-    db.commit()
-    db.refresh(verification)
 
-    try:
-        blockchain = record_document(document_hash, screening_id)
-        _apply_blockchain_result(verification, blockchain)
-    except Exception as error:
-        verification.blockchain_status = "PENDING"
-        verification.blockchain_error = str(error)[:1000]
-    db.commit()
-    db.refresh(verification)
+    if same_content:
+        verification_record.blockchain_status = "REUSED"
+        verification_record.blockchain_tx = prior_record.blockchain_tx
+        verification_record.block_number = prior_record.block_number
+        verification_record.blockchain_error = (
+            f"Exact file hash already registered by screening {prior_record.screening_id}."
+        )
+    elif not changed_content:
+        try:
+            _apply_blockchain_result(verification_record, record_document(document_hash, screening_id))
+        except Exception as error:
+            verification_record.blockchain_error = str(error)[:1000]
 
+    db.add(verification_record)
     db.add(AuditEvent(
         screening_id=screening_id,
         event_type="DOCUMENT_REGISTERED",
-        status=verification.blockchain_status,
-        transaction_hash=verification.blockchain_tx,
-        details=verification.blockchain_error or "Document hash registered during screening.",
+        status=verification_record.blockchain_status,
+        transaction_hash=verification_record.blockchain_tx,
+        details=(
+            "Document hash mismatch against the prior screening. "
+            + " ".join(integrity["change_reasons"])
+            if changed_content
+            else verification_record.blockchain_error or "Document hash registered on blockchain."
+        ),
     ))
     db.commit()
 
-    return _response(screening, document, payload, verification)
+    # -----------------------------------------------------
+    # Return screening result
+    # -----------------------------------------------------
+
+    return {
+        "screening_id": screening_id,
+
+        "document": {
+            "document_id": document.document_id,
+            "filename": document.filename,
+            "type": document.document_type,
+            "status": "ANALYZED"
+        },
+
+        "extracted_data": result["extracted_data"],
+
+        "ocr_analysis": result["ocr_analysis"],
+
+        "mrz_verification": result["mrz_verification"],
+
+        "document_validation": result["document_validation"],
+
+        "tampering_analysis": result["tampering_analysis"],
+
+        "stamp_analysis": result["stamp_analysis"],
+
+        "face_verification": result["face_verification"],
+
+        "watchlist": result["watchlist"],
+
+        "risk": result["risk"],
+
+        "blockchain": {
+            "recorded": verification_record.blockchain_status in ("CONFIRMED", "REUSED"),
+            "status": verification_record.blockchain_status,
+            "hash": document_hash,
+            "transaction_hash": verification_record.blockchain_tx,
+            "block_number": verification_record.block_number,
+            "error": verification_record.blockchain_error,
+        },
+        "document_integrity": integrity,
+    }
 
 
 # =========================================================
@@ -290,15 +372,53 @@ def get_screening(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    verification = (
+    verification_record = (
         db.query(VerificationRecord)
-        .filter(VerificationRecord.screening_id == screening_id)
+        .filter(VerificationRecord.screening_id == screening.screening_id)
         .first()
     )
-    if not verification:
-        raise HTTPException(status_code=404, detail="Verification record not found")
 
-    payload = json.loads(verification.result_payload)
-    return _response(screening, document, payload, verification)
+    result = generate_screening_result(document.file_path, document.document_type)
+    screening.risk_score = result["risk"]["score"]
+    screening.risk_level = result["risk"]["level"]
+    screening.face_match = result["face_verification"]["match"]
+    screening.tampering_detected = result["tampering_analysis"]["detected"]
+    screening.watchlist_match = result["watchlist"]["match"]
+    db.commit()
+
+    return {
+        "screening_id": screening.screening_id,
+
+        "document": {
+            "document_id": document.document_id if document else None,
+            "type": document.document_type if document else None,
+            "filename": document.filename if document else None,
+            "status": "ANALYZED"
+        },
+
+        "extracted_data": result["extracted_data"],
+        "ocr_analysis": result["ocr_analysis"],
+        "mrz_verification": result["mrz_verification"],
+        "document_validation": result["document_validation"],
+        "tampering_analysis": result["tampering_analysis"],
+        "stamp_analysis": result["stamp_analysis"],
+        "face_verification": result["face_verification"],
+        "watchlist": result["watchlist"],
+        "document_integrity": (
+            json.loads(verification_record.result_payload).get("document_integrity", {})
+            if verification_record
+            else {}
+        ),
+        "risk": result["risk"],
+        "blockchain": {
+            "recorded": bool(verification_record and verification_record.blockchain_status in ("CONFIRMED", "REUSED")),
+            "status": verification_record.blockchain_status if verification_record else "PENDING",
+            "hash": verification_record.document_hash if verification_record else None,
+            "transaction_hash": verification_record.blockchain_tx if verification_record else None,
+            "block_number": verification_record.block_number if verification_record else None,
+            "error": verification_record.blockchain_error if verification_record else "Verification record not created.",
+        },
+        "created_at": screening.created_at
+    }
 
 
